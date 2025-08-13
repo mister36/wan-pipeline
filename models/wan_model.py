@@ -6,6 +6,7 @@ This module provides integration with both WAN 2.2 T2V and I2V models for genera
 
 import torch
 import logging
+import gc
 from typing import Optional
 from pathlib import Path
 from diffusers import WanPipeline, WanImageToVideoPipeline, AutoencoderKLWan
@@ -17,30 +18,69 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 class WANModel:
-    """Wrapper for WAN 2.2 Text-to-Video and Image-to-Video models"""
+    """Wrapper for WAN 2.2 Text-to-Video and Image-to-Video models with memory-efficient loading"""
     
     def __init__(self, device: str = "cuda"):
         self.device = device
         self.t2v_pipeline = None  # Text-to-Video pipeline
         self.i2v_pipeline = None  # Image-to-Video pipeline
         self.vae = None
-        self.model_loaded = False
         self.t2v_model_id = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
         self.i2v_model_id = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
         self.dtype = torch.bfloat16
+        self.current_model = None  # Track which model is currently loaded
         
     def load_model(self):
-        """Load both WAN 2.2 T2V and I2V models"""
-        logger.info("Loading WAN 2.2 models...")
+        """Initialize model - no longer pre-loads models to save memory"""
+        logger.info("WAN Model wrapper initialized - models will be loaded on-demand")
         
-        # Load VAE for T2V model
-        logger.info("Loading VAE...")
-        self.vae = AutoencoderKLWan.from_pretrained(
-            self.t2v_model_id, 
-            subfolder="vae", 
-            torch_dtype=torch.float32,
-            low_cpu_mem_usage=True  # Explicitly enable for better memory management
-        )
+    def _cleanup_memory(self):
+        """Clean up GPU memory by unloading models and running garbage collection"""
+        if self.t2v_pipeline is not None:
+            del self.t2v_pipeline
+            self.t2v_pipeline = None
+            
+        if self.i2v_pipeline is not None:
+            del self.i2v_pipeline
+            self.i2v_pipeline = None
+            
+        if self.vae is not None:
+            del self.vae
+            self.vae = None
+            
+        self.current_model = None
+        
+        # Force garbage collection and clear GPU cache
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            logger.info(f"GPU memory cleared. Current allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+    
+    def _load_t2v_model(self):
+        """Load T2V model and VAE, unloading I2V if necessary"""
+        if self.current_model == "t2v" and self.t2v_pipeline is not None:
+            return  # Already loaded
+            
+        logger.info("Loading WAN 2.2 T2V model...")
+        
+        # Unload I2V model if it's currently loaded
+        if self.current_model == "i2v":
+            logger.info("Unloading I2V model to free memory...")
+            if self.i2v_pipeline is not None:
+                del self.i2v_pipeline
+                self.i2v_pipeline = None
+            gc.collect()
+            torch.cuda.empty_cache()
+        
+        # Load VAE for T2V model if not already loaded
+        if self.vae is None:
+            logger.info("Loading VAE...")
+            self.vae = AutoencoderKLWan.from_pretrained(
+                self.t2v_model_id, 
+                subfolder="vae", 
+                torch_dtype=torch.float32,
+                low_cpu_mem_usage=True
+            )
         
         # Load T2V pipeline
         logger.info("Loading T2V pipeline...")
@@ -48,21 +88,41 @@ class WANModel:
             self.t2v_model_id, 
             vae=self.vae,
             torch_dtype=self.dtype,
-            low_cpu_mem_usage=True  # Explicitly enable for better memory management
+            low_cpu_mem_usage=True
         )
         self.t2v_pipeline.to(self.device)
+        self.current_model = "t2v"
+        
+        logger.info(f"T2V model loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+    
+    def _load_i2v_model(self):
+        """Load I2V model, unloading T2V if necessary"""
+        if self.current_model == "i2v" and self.i2v_pipeline is not None:
+            return  # Already loaded
+            
+        logger.info("Loading WAN 2.2 I2V model...")
+        
+        # Unload T2V model if it's currently loaded
+        if self.current_model == "t2v":
+            logger.info("Unloading T2V model to free memory...")
+            if self.t2v_pipeline is not None:
+                del self.t2v_pipeline
+                self.t2v_pipeline = None
+            # Keep VAE as it might be useful for other operations
+            gc.collect()
+            torch.cuda.empty_cache()
         
         # Load I2V pipeline
         logger.info("Loading I2V pipeline...")
         self.i2v_pipeline = WanImageToVideoPipeline.from_pretrained(
             self.i2v_model_id, 
             torch_dtype=self.dtype,
-            low_cpu_mem_usage=True  # Explicitly enable for better memory management
+            low_cpu_mem_usage=True
         )
         self.i2v_pipeline.to(self.device)
+        self.current_model = "i2v"
         
-        logger.info("WAN 2.2 models loaded successfully")
-        self.model_loaded = True
+        logger.info(f"I2V model loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
     
     def generate_video_from_prompt(
         self, 
@@ -87,8 +147,8 @@ class WANModel:
         Returns:
             Path to the generated video file
         """
-        if not self.model_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+        # Load T2V model on-demand
+        self._load_t2v_model()
             
         logger.info(f"Generating video from prompt: '{prompt}' using WAN 2.2 T2V")
         
@@ -132,8 +192,8 @@ class WANModel:
         Returns:
             Path to the generated image file
         """
-        if not self.model_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+        # Load T2V model on-demand
+        self._load_t2v_model()
             
         logger.info(f"Generating single frame from prompt: '{prompt}' using WAN 2.2 T2V")
         
@@ -180,8 +240,8 @@ class WANModel:
         Returns:
             Path to the generated video file
         """
-        if not self.model_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+        # Load I2V model on-demand
+        self._load_i2v_model()
             
         logger.info(f"Generating video from image: {image_path} with prompt: '{prompt}' using WAN 2.2 I2V")
         
@@ -223,3 +283,12 @@ class WANModel:
         return output_path
     
 
+    
+    def cleanup_models(self):
+        """Public method to clean up all models and free memory"""
+        logger.info("Cleaning up WAN models to free memory...")
+        self._cleanup_memory()
+    
+    def get_current_model(self) -> Optional[str]:
+        """Get the currently loaded model type"""
+        return self.current_model

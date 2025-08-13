@@ -61,12 +61,12 @@ class VideoPipeline:
         self.facefusion_model = FaceFusionModel()
         
     async def load_models(self):
-        """Load WAN and FaceFusion models"""
-        # Load models
+        """Initialize models - WAN models will be loaded on-demand to save memory"""
+        # Initialize models (no heavy loading at startup)
         self.wan_model.load_model()
         self.facefusion_model.load_model()
         
-        logger.info("Models loaded successfully")
+        logger.info("Model wrappers initialized successfully - WAN models will load on-demand")
     
     def generate_initial_video(self, prompt: str, output_path: str) -> str:
         """Generate initial near-still vertical video using WAN 2.2 T2V from prompt"""
@@ -177,7 +177,9 @@ async def generate_video(
         final_video_path = temp_path / "final_video.mp4"
         pipeline.generate_final_video(str(face_swapped_path), prompt, str(final_video_path))
         
-        logger.info("Video generation completed")
+        # Clean up WAN models to free memory after generation
+        pipeline.wan_model.cleanup_models()
+        logger.info("Video generation completed and memory cleaned up")
         
         # Return the generated video directly
         return FileResponse(
