@@ -1,12 +1,13 @@
-# Core dependencies first - install with: pip install --extra-index-url https://download.pytorch.org/whl/cu121 -r requirements.txt
-torch==2.3.1
-torchvision==0.18.1
+# Core dependencies first - install with: pip install --extra-index-url https://download.pytorch.org/whl/cu124 -r requirements.txt
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
 numpy==1.24.3
 
 # ML dependencies that depend on torch
-xformers==0.0.27  # Compatible with torch==2.3.1
+xformers==0.0.28.post3  # Compatible with torch==2.5.1
 einops
-transformers==4.35.2
+transformers==4.46.0
 
 # Web framework
 fastapi==0.104.1
