@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -25,6 +26,30 @@ app = FastAPI(
 # Create necessary directories
 TEMP_DIR = Path("temp")
 TEMP_DIR.mkdir(exist_ok=True)
+
+def clone_facefusion():
+    """Clone FaceFusion repository if it doesn't exist"""
+    facefusion_path = Path("facefusion")
+    
+    if facefusion_path.exists():
+        logger.info("FaceFusion directory already exists, skipping clone")
+        return
+    
+    logger.info("Cloning FaceFusion repository...")
+    try:
+        result = subprocess.run([
+            "git", "clone", 
+            "https://github.com/facefusion/facefusion.git",
+            str(facefusion_path)
+        ], check=True, capture_output=True, text=True)
+        
+        logger.info("FaceFusion cloned successfully")
+        logger.info(f"Clone output: {result.stdout}")
+        
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to clone FaceFusion: {e}")
+        logger.error(f"Error output: {e.stderr}")
+        raise RuntimeError(f"Failed to clone FaceFusion repository: {e.stderr}")
 
 class VideoPipeline:
     def __init__(self):
@@ -91,7 +116,11 @@ pipeline = VideoPipeline()
 
 @app.on_event("startup")
 async def startup_event():
-    """Load models on startup"""
+    """Clone FaceFusion and load models on startup"""
+    # Clone FaceFusion repository if needed
+    clone_facefusion()
+    
+    # Load models
     await pipeline.load_models()
 
 @app.get("/")

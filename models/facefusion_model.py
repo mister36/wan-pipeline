@@ -31,7 +31,8 @@ class FaceFusionModel:
         if not self.facefusion_path.exists():
             raise RuntimeError(
                 f"FaceFusion not found at {self.facefusion_path}. "
-                "Please clone FaceFusion: git clone https://github.com/facefusion/facefusion.git"
+                "The repository should have been cloned automatically on startup. "
+                "If you see this error, please check the server startup logs."
             )
         
         # Check if facefusion.py exists
@@ -39,7 +40,8 @@ class FaceFusionModel:
         if not facefusion_script.exists():
             raise RuntimeError(
                 f"facefusion.py not found at {facefusion_script}. "
-                "Please ensure FaceFusion is properly cloned."
+                "The FaceFusion repository may not have been cloned properly. "
+                "Please check the server startup logs."
             )
         
         logger.info(f"FaceFusion found at: {self.facefusion_path}")

@@ -12,5 +12,4 @@ numpy==1.24.3
 # WAN 2.2 dependencies
 xformers
 einops
-# FaceFusion - clone this repository to the project root
-git+https://github.com/facefusion/facefusion.git
+# FaceFusion - will be cloned automatically on server startup
