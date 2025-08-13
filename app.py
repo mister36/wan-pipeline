@@ -264,6 +264,7 @@ async def generate_video(
     Start video generation job and return job ID immediately
     
     Returns a job ID that can be used to check status and retrieve the video once complete.
+    Processing begins immediately after job creation.
     """
     
     # Validate inputs
@@ -283,40 +284,13 @@ async def generate_video(
     
     logger.info(f"Created job {job_id} - Prompt: {prompt}")
     
-    return {
-        "job_id": job_id,
-        "status": "queued",
-        "message": "Video generation job created. Use /job-status/{job_id} to check progress and /get-video/{job_id} to download when complete."
-    }
-
-@app.post("/process-job/{job_id}")
-async def process_job(job_id: str):
-    """
-    Process a queued video generation job
-    
-    This endpoint should be called to actually start processing the video.
-    In a real system, this would be handled by a background worker.
-    """
-    job = JobManager.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    if job["status"] != "queued":
-        raise HTTPException(status_code=400, detail=f"Job is already {job['status']}")
-    
-    # Find the headshot file
-    headshot_path = TEMP_DIR / f"headshot_{job_id}_{job['headshot_filename']}"
-    if not headshot_path.exists():
-        JobManager.update_job_status(job_id, "failed", error="Headshot file not found")
-        raise HTTPException(status_code=400, detail="Headshot file not found")
-    
-    # Process the video generation
-    process_video_generation(job_id, str(headshot_path), job["prompt"])
+    # Start processing immediately
+    process_video_generation(job_id, str(headshot_path), prompt)
     
     return {
         "job_id": job_id,
         "status": "processing",
-        "message": "Video generation started"
+        "message": "Video generation started. Use /job-status/{job_id} to check progress and /get-video/{job_id} to download when complete."
     }
 
 @app.get("/job-status/{job_id}")
