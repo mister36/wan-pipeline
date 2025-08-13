@@ -1,0 +1,16 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+Pillow==10.1.0
+opencv-python==4.8.1.78
+torch==2.1.1
+torchvision==0.16.1
+# WAN 2.2 T2V and I2V models - requires diffusers main branch
+git+https://github.com/huggingface/diffusers
+transformers==4.35.2
+numpy==1.24.3
+# WAN 2.2 dependencies
+xformers
+einops
+# FaceFusion - clone this repository to the project root
+git+https://github.com/facefusion/facefusion.git
