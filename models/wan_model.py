@@ -38,7 +38,8 @@ class WANModel:
         self.vae = AutoencoderKLWan.from_pretrained(
             self.t2v_model_id, 
             subfolder="vae", 
-            torch_dtype=torch.float32
+            torch_dtype=torch.float32,
+            low_cpu_mem_usage=True  # Explicitly enable for better memory management
         )
         
         # Load T2V pipeline
@@ -46,7 +47,8 @@ class WANModel:
         self.t2v_pipeline = WanPipeline.from_pretrained(
             self.t2v_model_id, 
             vae=self.vae,
-            torch_dtype=self.dtype
+            torch_dtype=self.dtype,
+            low_cpu_mem_usage=True  # Explicitly enable for better memory management
         )
         self.t2v_pipeline.to(self.device)
         
@@ -54,7 +56,8 @@ class WANModel:
         logger.info("Loading I2V pipeline...")
         self.i2v_pipeline = WanImageToVideoPipeline.from_pretrained(
             self.i2v_model_id, 
-            torch_dtype=self.dtype
+            torch_dtype=self.dtype,
+            low_cpu_mem_usage=True  # Explicitly enable for better memory management
         )
         self.i2v_pipeline.to(self.device)
         

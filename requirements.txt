@@ -8,6 +8,7 @@ numpy==1.24.3
 xformers==0.0.28.post3  # Compatible with torch==2.5.1
 einops
 transformers==4.46.0
+accelerate>=0.25.0  # Required for proper model loading and memory management
 
 # Web framework
 fastapi==0.104.1
