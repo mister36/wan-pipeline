@@ -3,8 +3,8 @@ uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 Pillow==10.1.0
 opencv-python==4.8.1.78
-torch==2.1.1
-torchvision==0.16.1
+torch>=2.3.0
+torchvision>=0.18.0
 # WAN 2.2 T2V and I2V models - requires diffusers main branch
 git+https://github.com/huggingface/diffusers
 transformers==4.35.2
