@@ -9,7 +9,7 @@ from datetime import datetime
 
 import cv2
 import torch
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
 from fastapi.responses import FileResponse
 import logging
 
@@ -257,14 +257,14 @@ async def root():
 
 @app.post("/generate-video/")
 async def generate_video(
+    background_tasks: BackgroundTasks,
     headshot: UploadFile = File(..., description="Headshot image file"),
     prompt: str = Form(..., description="Text prompt for video generation")
 ):
     """
     Start video generation job and return job ID immediately
     
-    Returns a job ID that can be used to check status and retrieve the video once complete.
-    Processing begins immediately after job creation.
+    Returns a job ID immediately while processing begins in the background.
     """
     
     # Validate inputs
@@ -284,13 +284,13 @@ async def generate_video(
     
     logger.info(f"Created job {job_id} - Prompt: {prompt}")
     
-    # Start processing immediately
-    process_video_generation(job_id, str(headshot_path), prompt)
+    # Start processing in background
+    background_tasks.add_task(process_video_generation, job_id, str(headshot_path), prompt)
     
     return {
         "job_id": job_id,
-        "status": "processing",
-        "message": "Video generation started. Use /job-status/{job_id} to check progress and /get-video/{job_id} to download when complete."
+        "status": "queued",
+        "message": "Video generation job created and processing started. Use /job-status/{job_id} to check progress and /get-video/{job_id} to download when complete."
     }
 
 @app.get("/job-status/{job_id}")
