@@ -16,6 +16,15 @@ import logging
 from models.wan_model import WANModel
 from models.facefusion_model import FaceFusionModel
 
+# Set cache environment variables immediately on import
+os.environ["HF_HOME"] = "/workspace/.cache/huggingface"
+os.environ["TRANSFORMERS_CACHE"] = "/workspace/.cache/transformers"
+os.environ["HF_DATASETS_CACHE"] = "/workspace/.cache/datasets"
+os.environ["TORCH_HOME"] = "/workspace/.cache/torch"
+os.environ["XDG_CACHE_HOME"] = "/workspace/.cache"
+os.environ["PIP_CACHE_DIR"] = "/workspace/.cache/pip"
+os.environ["INSIGHTFACE_HOME"] = "/workspace/.cache/insightface"
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
