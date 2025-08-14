@@ -19,6 +19,9 @@ python-multipart==0.0.6
 Pillow==10.1.0
 opencv-python==4.8.1.78
 
+# Text processing (required by transformers)
+ftfy
+
 # WAN 2.2 T2V and I2V models - requires diffusers main branch
 git+https://github.com/huggingface/diffusers
 # FaceFusion - will be cloned automatically on server startup
