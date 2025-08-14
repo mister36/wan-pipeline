@@ -78,7 +78,7 @@ class FaceFusionModel:
             "--target", target_image_path,
             "--output", output_path,
             # Add recommended options for better quality
-            "--face-detector-model", "yoloface",
+            "--face-detector-model", "yolo_face",
             "--face-selector-mode", "best",
             "--face-mask-types", "box",
             "--face-mask-blur", "0.3",
