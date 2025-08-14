@@ -13,6 +13,7 @@ numpy==2.2.4
 einops
 transformers==4.46.0
 accelerate>=0.25.0  # Required for proper model loading and memory management
+peft>=0.6.0  # Required for LoRA weight loading
 
 # Web framework
 fastapi>=0.115.2
