@@ -14,7 +14,7 @@ The media generation pipeline supports two main workflows:
 1. Clone this repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/mister36/wan-pipeline.git
 cd wan-pipeline
 ```
 
