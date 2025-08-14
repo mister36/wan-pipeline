@@ -79,10 +79,10 @@ class FaceFusionModel:
             "--output-path", output_path,
             # Add recommended options for better quality
             "--face-detector-model", "yolo_face",
-            "--face-selector-mode", "best",
+            "--face-selector-mode", "one",
             "--face-mask-types", "box",
             "--face-mask-blur", "0.3",
-            "--face-mask-padding", "0,0,0,0",
+            "--face-mask-padding", "0 0 0 0",
             "--output-video-quality", "95"
         ]
         
