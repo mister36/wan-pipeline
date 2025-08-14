@@ -16,14 +16,6 @@ import logging
 from models.wan_model import WANModel
 from models.facefusion_model import FaceFusionModel
 
-# Set cache environment variables immediately on import
-os.environ["HF_HOME"] = "/workspace/.cache/huggingface"
-os.environ["TRANSFORMERS_CACHE"] = "/workspace/.cache/transformers"
-os.environ["HF_DATASETS_CACHE"] = "/workspace/.cache/datasets"
-os.environ["TORCH_HOME"] = "/workspace/.cache/torch"
-os.environ["XDG_CACHE_HOME"] = "/workspace/.cache"
-os.environ["PIP_CACHE_DIR"] = "/workspace/.cache/pip"
-os.environ["INSIGHTFACE_HOME"] = "/workspace/.cache/insightface"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -249,6 +241,15 @@ def process_video_generation(job_id: str, headshot_path: str, prompt: str):
 @app.on_event("startup")
 async def startup_event():
     """Clone FaceFusion, load jobs, and load models on startup"""
+    # Ensure cache environment is set up
+    logger.info("Setting up cache environment...")
+    setup_cache_environment()
+    
+    # Log current environment variables for verification
+    logger.info("Current cache environment variables:")
+    for var_name in CACHE_VARS.keys():
+        logger.info(f"  {var_name}={os.environ.get(var_name, 'NOT_SET')}")
+    
     # Load existing jobs from disk
     JobManager.load_jobs_from_disk()
     logger.info(f"Loaded {len(jobs)} existing jobs")
