@@ -1,12 +1,15 @@
-# Core dependencies first - install with: pip install --extra-index-url https://download.pytorch.org/whl/cu128 -r requirements.txt
-# PyTorch with CUDA 12.8 support for Blackwell GPUs (sm_120)
-torch>=2.6.0
-torchvision>=0.21.0
-torchaudio>=2.6.0
+# Core dependencies first - install with: pip install --extra-index-url https://download.pytorch.org/whl/nightly/cu128 -r requirements.txt
+# PyTorch NIGHTLY with CUDA 12.8+ support for Blackwell GPUs (sm_120)
+--pre
+--extra-index-url https://download.pytorch.org/whl/nightly/cu128
+torch
+torchvision
+torchaudio
 numpy==1.24.3
 
 # ML dependencies that depend on torch
-xformers>=0.0.28.post3  # Will be updated to match PyTorch version
+--extra-index-url https://download.pytorch.org/whl/nightly/cu128
+xformers  # Nightly build to match PyTorch nightly
 einops
 transformers==4.46.0
 accelerate>=0.25.0  # Required for proper model loading and memory management
