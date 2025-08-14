@@ -76,7 +76,7 @@ class FaceFusionModel:
             "headless-run",
             "--source", source_image_path,
             "--target", target_image_path,
-            "--output", output_path,
+            "--output-path", output_path,
             # Add recommended options for better quality
             "--face-detector-model", "yolo_face",
             "--face-selector-mode", "best",
