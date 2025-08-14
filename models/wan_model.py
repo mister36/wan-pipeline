@@ -20,13 +20,14 @@ logger = logging.getLogger(__name__)
 class WANModel:
     """Wrapper for WAN 2.2 Text-to-Video and Image-to-Video models with memory-efficient loading"""
     
-    def __init__(self, device: str = "cuda"):
+    def __init__(self, device: str = "cuda", instagirl_lora_path: str = None):
         self.device = device
         self.t2v_pipeline = None  # Text-to-Video pipeline
         self.i2v_pipeline = None  # Image-to-Video pipeline
         self.vae = None
         self.t2v_model_id = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
         self.i2v_model_id = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+        self.instagirl_lora_path = instagirl_lora_path
         self.dtype = torch.bfloat16
         self.current_model = None  # Track which model is currently loaded
         
@@ -91,6 +92,12 @@ class WANModel:
             low_cpu_mem_usage=True
         )
         self.t2v_pipeline.to(self.device)
+        
+        # Load Instagirl lora for T2V if path is provided
+        if self.instagirl_lora_path:
+            logger.info("Loading Instagirl lora...")
+            self.t2v_pipeline.load_lora_weights(self.instagirl_lora_path)
+        
         self.current_model = "t2v"
         
         logger.info(f"T2V model loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
@@ -181,7 +188,7 @@ class WANModel:
         height: int = 1280  # Vertical format for portrait shots
     ) -> str:
         """
-        Generate a single frame from a text prompt using WAN 2.2 T2V (near-still shot)
+        Generate a single frame from a text prompt using WAN 2.2 T2V with Instagirl lora
         
         Args:
             prompt: Text description for image generation
@@ -195,7 +202,7 @@ class WANModel:
         # Load T2V model on-demand
         self._load_t2v_model()
             
-        logger.info(f"Generating single frame from prompt: '{prompt}' using WAN 2.2 T2V")
+        logger.info(f"Generating single frame from prompt: '{prompt}' using WAN 2.2 T2V with Instagirl lora")
         
         # Define negative prompt (from WAN example)
         negative_prompt = "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"

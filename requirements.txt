@@ -18,6 +18,7 @@ accelerate>=0.25.0  # Required for proper model loading and memory management
 fastapi>=0.115.2
 uvicorn[standard]==0.24.0
 python-multipart>=0.0.18
+requests>=2.31.0
 
 # Image processing
 Pillow==10.1.0
@@ -28,18 +29,11 @@ opencv-python==4.11.0.86
 imageio
 imageio-ffmpeg
 
-# FaceFusion dependencies
-onnxruntime==1.22.0
-onnx==1.17.0
-gradio==5.25.2
-gradio-rangeslider==0.0.8
-psutil==7.0.0
+# General utilities
 tqdm==4.67.1
-scipy==1.15.2
 
 # Text processing (required by transformers)
 ftfy
 
 # WAN 2.2 T2V and I2V models - requires diffusers main branch
 git+https://github.com/huggingface/diffusers
-# FaceFusion - will be cloned automatically on server startup
