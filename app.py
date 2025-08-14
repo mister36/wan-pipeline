@@ -118,7 +118,7 @@ def download_instagirl_lora():
         return str(lora_path)
     
     logger.info("Downloading Instagirl lora...")
-    lora_url = "https://civitai.com/api/download/models/2086717?type=Model&format=Diffusers"
+    lora_url = "https://huggingface.co/mister36/instagirl-v2-hinoise/resolve/main/Instagirlv2.0_hinoise.safetensors?download=true"
     
     try:
         response = requests.get(lora_url, stream=True)
