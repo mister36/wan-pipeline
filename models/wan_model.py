@@ -130,7 +130,7 @@ class WANModel:
         output_path: str,
         width: int = 720,
         height: int = 1280,  # Vertical format for portrait shots
-        num_frames: int = 81,
+        num_frames: int = 9,  # Reduced from 81 for faster generation when only extracting frame 0
         fps: int = 16
     ) -> str:
         """

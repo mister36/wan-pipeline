@@ -147,13 +147,13 @@ class VideoPipeline:
         logger.info("Model wrappers initialized successfully - WAN models will load on-demand")
     
     def generate_initial_video(self, prompt: str, output_path: str) -> str:
-        """Generate initial near-still vertical video using WAN 2.2 T2V from prompt"""
+        """Generate initial short video using WAN 2.2 T2V from prompt (optimized for frame extraction)"""
         return self.wan_model.generate_video_from_prompt(
             prompt=prompt,
             output_path=output_path,
             width=720,
             height=1280,  # Vertical format for portrait shots
-            num_frames=81,
+            num_frames=9,  # Reduced from 81 for faster generation since we only need frame 0
             fps=16
         )
     
@@ -202,7 +202,7 @@ def process_video_generation(job_id: str, headshot_path: str, prompt: str):
         job_temp_dir = TEMP_DIR / job_id
         job_temp_dir.mkdir(exist_ok=True)
         
-        # Step 1: Generate initial video with WAN 2.2 T2V
+        # Step 1: Generate initial video with WAN 2.2 T2V (reduced frames for faster generation)
         initial_video_path = job_temp_dir / "initial_video.mp4"
         pipeline.generate_initial_video(prompt, str(initial_video_path))
         
