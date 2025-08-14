@@ -17,7 +17,7 @@ accelerate>=0.25.0  # Required for proper model loading and memory management
 # Web framework
 fastapi>=0.115.2
 uvicorn[standard]==0.24.0
-python-multipart==0.0.6
+python-multipart>=0.0.18
 
 # Image processing
 Pillow==10.1.0
