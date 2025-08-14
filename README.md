@@ -1,15 +1,13 @@
-# WAN Video Pipeline API
+# WAN Media Pipeline API
 
-A FastAPI server that generates videos from headshots and text prompts using WAN 2.2 i2v and FaceFusion technologies.
+A FastAPI server for generating images and videos using WAN 2.2 Text-to-Video (T2V) and Image-to-Video (I2V) models with Instagirl LoRA integration.
 
 ## Pipeline Overview
 
-The video generation pipeline works in four main steps:
+The media generation pipeline supports two main workflows:
 
-1. **Initial Video Generation**: Uses WAN 2.2 i2v to generate a near-still vertical shot based on the text prompt
-2. **Frame Extraction**: Extracts frame 0 from the initial video as the base still image
-3. **Face Swapping**: Uses FaceFusion to swap the face from the uploaded headshot into the base still
-4. **Final Video Generation**: Feeds the face-swapped still back into WAN i2v to create the final animated video
+1. **Text-to-Image Generation**: Uses WAN 2.2 T2V with Instagirl LoRA to generate high-quality portrait images from text prompts
+2. **Image-to-Video Generation**: Uses WAN 2.2 I2V to animate existing images based on text prompts, creating dynamic videos
 
 ## Installation
 
@@ -20,40 +18,15 @@ git clone <repository-url>
 cd wan-pipeline
 ```
 
-2. Clone FaceFusion (Required):
-
-```bash
-git clone https://github.com/facefusion/facefusion.git
-```
-
-Your directory structure should look like:
-
-```
-wan-pipeline/
-├── app.py
-├── models/
-├── facefusion/          # <- FaceFusion repository
-│   ├── facefusion.py    # <- This file must exist
-│   └── ...
-├── requirements.txt
-└── README.md
-```
-
-3. Install dependencies:
+2. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Setup FaceFusion dependencies (if needed):
+**Note**: The requirements include PyTorch nightly builds with CUDA 12.8+ support for optimal GPU performance. The Instagirl LoRA model will be automatically downloaded on first startup.
 
-```bash
-cd facefusion
-pip install -r requirements.txt
-cd ..
-```
-
-5. Start the server:
+3. Start the server:
 
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
@@ -61,161 +34,169 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ## API Usage
 
-### Generate Video Endpoint
+The API provides asynchronous job-based processing with background tasks for efficient resource management.
 
-**POST** `/generate-video/`
+### Generate Image from Text
 
-Upload a headshot image and provide a text prompt to generate a video.
+**POST** `/generate-image/`
+
+Generate a single image from a text prompt using WAN 2.2 T2V with Instagirl LoRA.
 
 **Parameters:**
 
--   `headshot` (file): Image file containing a headshot
--   `prompt` (string): Text description for the video scene
+-   `prompt` (form field): Text description for image generation
 
-**Example using curl:**
+**Example:**
 
 ```bash
-curl -X POST "http://localhost:8000/generate-video/" \
-  -F "headshot=@path/to/your/headshot.jpg" \
-  -F "prompt=A person standing in a beautiful garden with flowers blooming around them"
+curl -X POST "http://localhost:8000/generate-image/" \
+  -F "prompt=A beautiful woman with long flowing hair standing in a magical forest"
 ```
 
 **Response:**
 
 ```json
 {
-	"message": "Video generated successfully",
-	"session_id": "12345678-1234-1234-1234-123456789abc",
-	"video_path": "outputs/video_12345678-1234-1234-1234-123456789abc.mp4",
-	"download_url": "/download-video/12345678-1234-1234-1234-123456789abc"
+	"job_id": "12345678-1234-1234-1234-123456789abc",
+	"status": "queued",
+	"message": "Image generation job created and processing started. Use /job-status/{job_id} to check progress and /get-image/{job_id} to download when complete."
 }
 ```
 
-### Download Video Endpoint
+### Generate Video from Image
 
-**GET** `/download-video/{session_id}`
+**POST** `/generate-video-from-image/`
 
-Download the generated video using the session ID.
+Generate a video from an uploaded image and text prompt using WAN 2.2 I2V.
+
+**Parameters:**
+
+-   `image` (file): Input image file
+-   `prompt` (form field): Text description for video animation
+
+**Example:**
+
+```bash
+curl -X POST "http://localhost:8000/generate-video-from-image/" \
+  -F "image=@path/to/your/image.jpg" \
+  -F "prompt=The person in the image smiling and looking around"
+```
+
+### Job Management Endpoints
+
+**GET** `/job-status/{job_id}`
+
+Check the status of a generation job.
+
+**GET** `/get-image/{job_id}`
+
+Download the generated image for a completed image generation job.
+
+**GET** `/get-video/{job_id}`
+
+Download the generated video for a completed video generation job.
+
+**GET** `/jobs`
+
+List all jobs (for debugging/admin purposes).
 
 ### Other Endpoints
 
 -   **GET** `/`: Health check endpoint
--   **DELETE** `/cleanup/{session_id}`: Delete a generated video file
 
 ## Testing
 
-Run the test client to verify the API is working:
+You can test the API using curl commands or any HTTP client:
 
 ```bash
-python test_client.py
+# Test image generation
+curl -X POST "http://localhost:8000/generate-image/" \
+  -F "prompt=A beautiful portrait of a woman with flowing hair"
+
+# Check job status (replace job_id with actual ID from response)
+curl "http://localhost:8000/job-status/{job_id}"
+
+# Download completed image
+curl "http://localhost:8000/get-image/{job_id}" --output generated_image.png
 ```
 
-This will:
-
-1. Check if the server is running
-2. Create a test headshot image (if none exists)
-3. Send a video generation request
-4. Download the generated video
-
-## Model Integration Status
+## Model Integration
 
 ### Current Implementation
 
-The server includes **real model integrations** with automatic fallbacks:
+The server uses **real WAN 2.2 model integrations** with memory-efficient loading:
 
--   **WAN 2.2 Video Generation**: Uses WAN 2.2 T2V and I2V models for high-quality text-to-video and image-to-video generation
--   **Face Swapping**: Uses FaceFusion in headless mode for professional-grade face swapping
+-   **WAN 2.2 T2V**: Text-to-video generation with Instagirl LoRA for high-quality portrait generation
+-   **WAN 2.2 I2V**: Image-to-video generation for animating static images
+-   **Automatic Model Management**: Models are loaded on-demand and unloaded when not in use to optimize GPU memory
 
 ### Model Loading Behavior
 
-1. **On startup**, the server attempts to load real models:
+1. **On-Demand Loading**: Models are only loaded when needed for specific tasks
+2. **Memory Optimization**: Only one model type (T2V or I2V) is loaded at a time
+3. **Automatic Cleanup**: Models are automatically unloaded after generation to free GPU memory
+4. **Hardware Detection**: Automatically uses CUDA if available, with proper memory management
 
-    - **WAN 2.2 T2V/I2V**: Downloads automatically from Hugging Face
-    - **FaceFusion**: Uses the cloned FaceFusion repository in headless mode
+### Features
 
-2. **If model loading fails** (e.g., insufficient GPU memory, missing dependencies):
-
-    - Falls back to high-quality placeholder implementations
-    - Still provides functional video generation with basic effects
-
-3. **Automatic hardware optimization**:
-    - Uses CUDA if available, falls back to CPU
-    - Enables memory-efficient attention and VAE slicing
-    - Implements model CPU offloading for large models
-
-### Installation Options
-
-**Option 1: Full Installation (Recommended)**
-
-```bash
-pip install -r requirements.txt
-```
-
-**Option 2: Lightweight Installation (CPU only, faster)**
-
-```bash
-pip install fastapi uvicorn python-multipart Pillow opencv-python numpy
-```
-
-**Option 3: GPU Installation with CUDA**
-
-```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install -r requirements.txt
-```
+-   **Instagirl LoRA Integration**: Automatically downloads and applies Instagirl LoRA for enhanced portrait generation
+-   **Job-Based Processing**: Asynchronous background processing with status tracking
+-   **Memory Efficient**: Dynamic model loading/unloading to support multiple concurrent requests
+-   **Vertical Format Optimization**: Configured for portrait-oriented content (720x1280)
 
 ## Directory Structure
 
 ```
 wan-pipeline/
-├── app.py                 # FastAPI application
-├── requirements.txt       # Python dependencies
-├── README.md              # This file
+├── app.py                    # FastAPI application with job management
+├── requirements.txt          # Python dependencies (PyTorch nightly + CUDA)
+├── README.md                 # This file
 ├── models/
 │   ├── __init__.py
-│   ├── wan_model.py       # WAN model wrapper
-│   └── facefusion_model.py # FaceFusion model wrapper
-├── temp/                  # Temporary files during processing
-└── outputs/               # Generated video outputs
+│   ├── wan_model.py         # WAN 2.2 T2V/I2V model wrapper
+│   └── wan_model_append.py  # Additional model utilities
+├── temp/                    # Temporary files during processing
+├── jobs/                    # Job status persistence (JSON files)
+├── images/                  # Generated image outputs
+├── videos/                  # Generated video outputs
+└── models_cache/            # Cached model files (Instagirl LoRA)
 ```
 
 ## Configuration
 
 ### Hardware Requirements
 
--   **GPU**: NVIDIA GPU with CUDA support recommended for model inference
--   **RAM**: 8GB+ recommended
--   **Storage**: Sufficient space for temporary files and video outputs
+-   **GPU**: NVIDIA GPU with CUDA 12.8+ support (for Blackwell/RTX 40/50 series optimization)
+-   **VRAM**: 12GB+ recommended for optimal performance (models are loaded/unloaded dynamically)
+-   **RAM**: 16GB+ recommended for large model handling
+-   **Storage**: Sufficient space for model cache (~2-3GB) and outputs
 
 ### Environment Variables
 
-You can configure the following environment variables:
+Optional environment variables for configuration:
 
--   `CUDA_VISIBLE_DEVICES`: Specify which GPU to use
--   `MODEL_CACHE_DIR`: Directory for cached model files
+-   `CUDA_VISIBLE_DEVICES`: Specify which GPU to use (e.g., "0")
+-   Standard PyTorch CUDA environment variables for memory management
 
-## Error Handling
+## Job Management
 
-The API includes comprehensive error handling for:
+The API uses a sophisticated job management system:
 
--   Invalid file uploads
--   Model loading failures
--   Video processing errors
--   Disk space issues
+-   **Asynchronous Processing**: All generation tasks run in background, allowing immediate response
+-   **Status Tracking**: Real-time job status updates (queued, processing, completed, failed)
+-   **Persistence**: Jobs are saved to disk for recovery across server restarts
+-   **Error Handling**: Comprehensive error reporting with detailed messages
 
-All errors return appropriate HTTP status codes with detailed error messages.
+### Job Status Flow
+
+1. **queued**: Job created and waiting to start
+2. **processing**: Model is loaded and generation is in progress
+3. **completed**: Generation finished, output ready for download
+4. **failed**: Error occurred, check error message in job status
 
 ## Performance Considerations
 
--   Video generation is computationally intensive
--   Consider implementing request queuing for multiple concurrent requests
--   Monitor disk space as temporary files can accumulate
--   Use background tasks for long-running processes
-
-## License
-
-[Add your license information here]
-
-## Contributing
-
-[Add contribution guidelines here]
+-   **Memory Management**: Models are loaded on-demand and unloaded after use
+-   **GPU Optimization**: Uses PyTorch nightly for latest CUDA optimizations
+-   **Concurrent Requests**: Background job processing supports multiple simultaneous requests
+-   **Storage**: Monitor disk space for job persistence and output files
