@@ -82,7 +82,6 @@ class FaceFusionModel:
             "--face-selector-mode", "one",
             "--face-mask-types", "box",
             "--face-mask-blur", "0.3",
-            "--face-mask-padding", "0 0 0 0",
             "--output-video-quality", "95"
         ]
         
