@@ -23,6 +23,13 @@ python-multipart==0.0.6
 Pillow==10.1.0
 opencv-python==4.8.1.78
 
+# Video processing (recommended for better video export)
+imageio
+imageio-ffmpeg
+
+# ONNX Runtime (required by FaceFusion)
+onnxruntime
+
 # Text processing (required by transformers)
 ftfy
 
