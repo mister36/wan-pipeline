@@ -221,6 +221,14 @@ class WANModel:
             
             # Save the single frame as an image
             frame = output[0]  # Get the first (and only) frame
+            
+            # Convert numpy array to PIL Image if necessary
+            if isinstance(frame, np.ndarray):
+                # Ensure the array is in the correct format (0-255, uint8)
+                if frame.dtype != np.uint8:
+                    frame = (frame * 255).astype(np.uint8)
+                frame = Image.fromarray(frame)
+            
             frame.save(output_path)
         
         logger.info(f"Single frame generated and saved to: {output_path}")
