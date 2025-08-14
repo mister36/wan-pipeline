@@ -54,17 +54,15 @@ def test_facefusion_swap():
     cmd = [
         "python", str(facefusion_script),
         "headless-run",
-        "--processors", "face_swapper",
-        "--face-swapper-model", "inswapper_128",
         "--source", source_image,
         "--target", target_image,
         "--output-path", output_image,
         # Quality settings
-        "--face-detector-model", "yolo_face",
-        "--face-selector-mode", "one",
-        "--face-mask-types", "box",
-        "--face-mask-blur", "0.3",
-        "--output-video-quality", "95"
+         "--face-detector-model", "yolo_face",
+            "--face-selector-mode", "one",
+            "--face-mask-types", "box",
+            "--face-mask-blur", "0.3",
+            "--output-video-quality", "95"
     ]
     
     logger.info("Starting FaceFusion face swap test...")
