@@ -5,7 +5,7 @@
 torch
 torchvision
 torchaudio
-numpy==1.24.3
+numpy==2.2.4
 
 # ML dependencies that depend on torch
 # Skip xformers for now - it takes too long to compile from source
@@ -21,14 +21,21 @@ python-multipart==0.0.6
 
 # Image processing
 Pillow==10.1.0
-opencv-python==4.8.1.78
+opencv-python==4.11.0.86
+
 
 # Video processing (recommended for better video export)
 imageio
 imageio-ffmpeg
 
-# ONNX Runtime (required by FaceFusion)
-onnxruntime
+# FaceFusion dependencies
+onnxruntime==1.22.0
+onnx==1.17.0
+gradio==5.25.2
+gradio-rangeslider==0.0.8
+psutil==7.0.0
+tqdm==4.67.1
+scipy==1.15.2
 
 # Text processing (required by transformers)
 ftfy
