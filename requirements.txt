@@ -8,8 +8,8 @@ torchaudio
 numpy==1.24.3
 
 # ML dependencies that depend on torch
---extra-index-url https://download.pytorch.org/whl/nightly/cu128
-xformers  # Nightly build to match PyTorch nightly
+# Skip xformers for now - it takes too long to compile from source
+# xformers  # Nightly build to match PyTorch nightly - DISABLED due to long compilation
 einops
 transformers==4.46.0
 accelerate>=0.25.0  # Required for proper model loading and memory management
