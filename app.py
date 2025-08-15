@@ -163,14 +163,18 @@ class MediaPipeline:
             height=1280  # Vertical format for portrait shots
         )
     
-    def generate_video_from_image(self, image_path: str, prompt: str, output_path: str) -> str:
+    def generate_video_from_image(self, image_path: str, prompt: str, output_path: str, duration_seconds: float = 5.0) -> str:
         """Generate video from image and prompt using WAN 2.2 I2V"""
+        # Calculate number of frames based on duration and fixed fps of 16
+        fps = 16
+        num_frames = int(duration_seconds * fps)
+        
         return self.wan_model.generate_video_from_image(
             image_path=image_path,
             prompt=prompt,
             output_path=output_path,
-            num_frames=81,
-            fps=16
+            num_frames=num_frames,
+            fps=fps
         )
 
 # Initialize pipeline
@@ -198,7 +202,7 @@ def process_image_generation(job_id: str, prompt: str):
         logger.error(f"Job {job_id} failed: {error_msg}")
         JobManager.update_job_status(job_id, "failed", error=error_msg)
 
-def process_video_generation(job_id: str, image_path: str, prompt: str):
+def process_video_generation(job_id: str, image_path: str, prompt: str, duration_seconds: float = 5.0):
     """Process video generation for I2V job"""
     try:
         JobManager.update_job_status(job_id, "processing")
@@ -206,7 +210,7 @@ def process_video_generation(job_id: str, image_path: str, prompt: str):
         
         # Generate video with WAN 2.2 I2V
         output_video_path = VIDEOS_DIR / f"{job_id}.mp4"
-        pipeline.generate_video_from_image(image_path, prompt, str(output_video_path))
+        pipeline.generate_video_from_image(image_path, prompt, str(output_video_path), duration_seconds)
         
         # Clean up WAN models to free memory after generation
         pipeline.wan_model.cleanup_models()
@@ -277,7 +281,8 @@ async def generate_image(
 async def generate_video_from_image(
     background_tasks: BackgroundTasks,
     image: UploadFile = File(..., description="Input image file"),
-    prompt: str = Form(..., description="Text prompt for video generation")
+    prompt: str = Form(..., description="Text prompt for video generation"),
+    duration_seconds: float = Form(5.0, description="Duration of the generated video in seconds (default: 5.0)", ge=0.5, le=30.0)
 ):
     """
     Generate a video from image and prompt using WAN 2.2 I2V
@@ -300,10 +305,10 @@ async def generate_video_from_image(
     with open(image_path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
     
-    logger.info(f"Created video generation job {job_id} - Prompt: {prompt}")
+    logger.info(f"Created video generation job {job_id} - Prompt: {prompt}, Duration: {duration_seconds}s")
     
     # Start processing in background
-    background_tasks.add_task(process_video_generation, job_id, str(image_path), prompt)
+    background_tasks.add_task(process_video_generation, job_id, str(image_path), prompt, duration_seconds)
     
     return {
         "job_id": job_id,

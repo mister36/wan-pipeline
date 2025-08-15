@@ -249,8 +249,8 @@ class WANModel:
             image_path: Path to the input image
             prompt: Text description for video generation
             output_path: Path to save the generated video
-            num_frames: Number of frames to generate
-            fps: Frames per second
+            num_frames: Number of frames to generate (calculated from duration_seconds * fps in the API layer)
+            fps: Frames per second (fixed at 16 fps for consistent quality)
             
         Returns:
             Path to the generated video file
