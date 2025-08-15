@@ -18,7 +18,20 @@ git clone https://github.com/mister36/wan-pipeline.git
 cd wan-pipeline
 ```
 
-2. Install dependencies:
+2. Install system dependencies:
+
+```bash
+# Install ffmpeg (required for video frame interpolation)
+# On Ubuntu/Debian:
+sudo apt update && sudo apt install -y ffmpeg
+
+# On macOS:
+brew install ffmpeg
+
+# On other systems, ensure ffmpeg is available in PATH
+```
+
+3. Install Python dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -26,7 +39,7 @@ pip install -r requirements.txt
 
 **Note**: The requirements include PyTorch nightly builds with CUDA 12.8+ support for optimal GPU performance. The Instagirl LoRA model will be automatically downloaded on first startup.
 
-3. Start the server:
+4. Start the server:
 
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
@@ -67,7 +80,7 @@ curl -X POST "http://localhost:8000/generate-image/" \
 
 **POST** `/generate-video-from-image/`
 
-Generate a video from an uploaded image and text prompt using WAN 2.2 I2V.
+Generate a video from an uploaded image and text prompt using WAN 2.2 I2V. The output video is automatically interpolated to 32 fps using ffmpeg's minterpolate filter for smooth motion.
 
 **Parameters:**
 
