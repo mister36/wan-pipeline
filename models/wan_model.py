@@ -227,7 +227,7 @@ class WANModel:
                 num_frames=num_frames,
                 guidance_scale=4.0,
                 guidance_scale_2=3.0,
-                num_inference_steps=40,
+                num_inference_steps=20,
             ).frames[0]
             
             # Export to video with frame interpolation to 32 fps
@@ -272,7 +272,7 @@ class WANModel:
                 num_frames=1,  # Generate only one frame
                 guidance_scale=4.0,
                 guidance_scale_2=3.0,
-                num_inference_steps=40,
+                num_inference_steps=20,
             ).frames[0]
             
             # Save the single frame as an image
@@ -343,7 +343,7 @@ class WANModel:
                 width=width,
                 num_frames=num_frames,
                 guidance_scale=3.5,
-                num_inference_steps=40,
+                num_inference_steps=20,
                 generator=generator,
             ).frames[0]
             
