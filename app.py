@@ -2,6 +2,8 @@ import os
 import shutil
 import uuid
 import json
+import zipfile
+import tempfile
 from pathlib import Path
 from datetime import datetime
 
@@ -54,13 +56,52 @@ class JobManager:
         job_data = {
             "id": job_id,
             "status": "queued",
-            "type": job_type,  # "image" or "video"
+            "type": job_type,  # "image", "video", or "image_batch"
             "prompt": prompt,
             "input_filename": input_filename,  # For I2V jobs
             "created_at": datetime.now().isoformat(),
             "completed_at": None,
             "error": None,
             "output_path": None  # Can be image or video path
+        }
+        
+        jobs[job_id] = job_data
+        
+        # Save job to disk for persistence
+        job_file = JOBS_DIR / f"{job_id}.json"
+        with open(job_file, "w") as f:
+            json.dump(job_data, f, indent=2)
+        
+        return job_id
+    
+    @staticmethod
+    def create_batch_job(prompts: list[str], job_type: str = "image_batch") -> str:
+        """Create a new batch job for multiple prompts and return job ID"""
+        job_id = str(uuid.uuid4())
+        
+        # Create individual image entries for each prompt
+        images = []
+        for i, prompt in enumerate(prompts):
+            images.append({
+                "index": i,
+                "prompt": prompt,
+                "status": "queued",
+                "output_path": None,
+                "error": None
+            })
+        
+        job_data = {
+            "id": job_id,
+            "status": "queued",
+            "type": job_type,
+            "prompts": prompts,  # Store original prompts list
+            "images": images,  # Individual image tracking
+            "created_at": datetime.now().isoformat(),
+            "completed_at": None,
+            "error": None,
+            "total_images": len(prompts),
+            "completed_images": 0,
+            "failed_images": 0
         }
         
         jobs[job_id] = job_data
@@ -90,6 +131,49 @@ class JobManager:
         job_file = JOBS_DIR / f"{job_id}.json"
         with open(job_file, "w") as f:
             json.dump(jobs[job_id], f, indent=2)
+        
+        return True
+    
+    @staticmethod
+    def update_batch_image_status(job_id: str, image_index: int, status: str, output_path: str = None, error: str = None):
+        """Update status of individual image in batch job"""
+        if job_id not in jobs:
+            return False
+        
+        job = jobs[job_id]
+        if job["type"] != "image_batch" or image_index >= len(job["images"]):
+            return False
+        
+        # Update individual image status
+        job["images"][image_index]["status"] = status
+        if output_path:
+            job["images"][image_index]["output_path"] = output_path
+        if error:
+            job["images"][image_index]["error"] = error
+        
+        # Update counters
+        if status == "completed":
+            job["completed_images"] += 1
+        elif status == "failed":
+            job["failed_images"] += 1
+        
+        # Check if entire batch is complete
+        total_processed = job["completed_images"] + job["failed_images"]
+        if total_processed == job["total_images"]:
+            if job["failed_images"] == 0:
+                job["status"] = "completed"
+            elif job["completed_images"] == 0:
+                job["status"] = "failed"
+            else:
+                job["status"] = "partially_completed"
+            job["completed_at"] = datetime.now().isoformat()
+        elif status == "processing" and job["status"] == "queued":
+            job["status"] = "processing"
+        
+        # Save updated job to disk
+        job_file = JOBS_DIR / f"{job_id}.json"
+        with open(job_file, "w") as f:
+            json.dump(job, f, indent=2)
         
         return True
     
@@ -202,6 +286,53 @@ def process_image_generation(job_id: str, prompt: str):
         logger.error(f"Job {job_id} failed: {error_msg}")
         JobManager.update_job_status(job_id, "failed", error=error_msg)
 
+def process_batch_image_generation(job_id: str, prompts: list[str]):
+    """Process batch image generation for multiple prompts - model stays loaded between generations"""
+    job = JobManager.get_job(job_id)
+    if not job:
+        logger.error(f"Batch job {job_id} not found")
+        return
+    
+    logger.info(f"Starting batch image generation for job {job_id} with {len(prompts)} prompts")
+    
+    try:
+        # Ensure T2V model is loaded for batch processing
+        pipeline.wan_model._load_t2v_model()
+        
+        # Process each prompt sequentially while keeping model loaded
+        for i, prompt in enumerate(prompts):
+            try:
+                logger.info(f"Processing image {i+1}/{len(prompts)} for job {job_id}: {prompt}")
+                
+                # Update individual image status to processing
+                JobManager.update_batch_image_status(job_id, i, "processing")
+                
+                # Generate image with WAN 2.2 T2V and Instagirl lora
+                output_image_path = IMAGES_DIR / f"{job_id}_image_{i}.png"
+                pipeline.generate_image_from_prompt(prompt, str(output_image_path))
+                
+                # Update individual image status to completed
+                JobManager.update_batch_image_status(job_id, i, "completed", output_path=str(output_image_path))
+                logger.info(f"Image {i+1}/{len(prompts)} completed for job {job_id}")
+                
+            except Exception as e:
+                error_msg = f"Image {i+1} generation failed: {str(e)}"
+                logger.error(f"Job {job_id}, image {i+1} failed: {error_msg}")
+                JobManager.update_batch_image_status(job_id, i, "failed", error=error_msg)
+                # Continue with next image even if one fails
+        
+        # Clean up WAN models to free memory after all generations are complete
+        pipeline.wan_model.cleanup_models()
+        logger.info(f"Batch image generation completed for job {job_id}. Model unloaded.")
+        
+    except Exception as e:
+        error_msg = f"Batch image generation failed: {str(e)}"
+        logger.error(f"Batch job {job_id} failed: {error_msg}")
+        JobManager.update_job_status(job_id, "failed", error=error_msg)
+        # Clean up models on error
+        if pipeline.wan_model:
+            pipeline.wan_model.cleanup_models()
+
 def process_video_generation(job_id: str, image_path: str, prompt: str, duration_seconds: float = 5.0):
     """Process video generation for I2V job"""
     try:
@@ -277,6 +408,50 @@ async def generate_image(
         "message": "Image generation job created and processing started. Use /job-status/{job_id} to check progress and /get-image/{job_id} to download when complete."
     }
 
+@app.post("/generate-images-batch/")
+async def generate_images_batch(
+    background_tasks: BackgroundTasks,
+    prompts: str = Form(..., description="JSON array of text prompts for batch image generation")
+):
+    """
+    Generate multiple images from prompts using WAN 2.2 T2V with Instagirl lora
+    
+    The model stays loaded between generations for efficiency.
+    Returns a job ID immediately while processing begins in the background.
+    """
+    
+    # Parse prompts from JSON string
+    try:
+        prompts_list = json.loads(prompts)
+        if not isinstance(prompts_list, list):
+            raise ValueError("Prompts must be a JSON array")
+        if len(prompts_list) == 0:
+            raise ValueError("At least one prompt is required")
+        if len(prompts_list) > 20:  # Reasonable limit to prevent abuse
+            raise ValueError("Maximum 20 prompts allowed per batch")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid prompts format: {str(e)}")
+    
+    # Validate each prompt
+    for i, prompt in enumerate(prompts_list):
+        if not isinstance(prompt, str) or len(prompt.strip()) == 0:
+            raise HTTPException(status_code=400, detail=f"Prompt {i+1} cannot be empty")
+    
+    # Create batch job
+    job_id = JobManager.create_batch_job(prompts_list, "image_batch")
+    
+    logger.info(f"Created batch image generation job {job_id} with {len(prompts_list)} prompts")
+    
+    # Start processing in background
+    background_tasks.add_task(process_batch_image_generation, job_id, prompts_list)
+    
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "total_images": len(prompts_list),
+        "message": f"Batch image generation job created with {len(prompts_list)} prompts. Use /job-status/{job_id} to check progress and /get-batch-images/{job_id} to download when complete."
+    }
+
 @app.post("/generate-video-from-image/")
 async def generate_video_from_image(
     background_tasks: BackgroundTasks,
@@ -319,12 +494,29 @@ async def generate_video_from_image(
 @app.get("/job-status/{job_id}")
 async def get_job_status(job_id: str):
     """
-    Get the status of an image or video generation job
+    Get the status of an image, video, or batch generation job
     """
     job = JobManager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
+    # Handle batch jobs
+    if job["type"] == "image_batch":
+        return {
+            "job_id": job_id,
+            "status": job["status"],
+            "type": job["type"],
+            "created_at": job["created_at"],
+            "completed_at": job.get("completed_at"),
+            "error": job.get("error"),
+            "total_images": job["total_images"],
+            "completed_images": job["completed_images"],
+            "failed_images": job["failed_images"],
+            "progress_percentage": round((job["completed_images"] + job["failed_images"]) / job["total_images"] * 100, 1),
+            "images": job["images"]  # Individual image status
+        }
+    
+    # Handle single image/video jobs
     return {
         "job_id": job_id,
         "status": job["status"],
@@ -390,6 +582,76 @@ async def get_video(job_id: str):
         media_type="video/mp4",
         filename=f"generated_video_{job_id}.mp4"
     )
+
+@app.get("/get-batch-image/{job_id}/{image_index}")
+async def get_batch_image(job_id: str, image_index: int):
+    """
+    Download a specific image from a batch generation job
+    """
+    job = JobManager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job["type"] != "image_batch":
+        raise HTTPException(status_code=400, detail="Job is not a batch image generation job")
+    
+    if image_index < 0 or image_index >= len(job["images"]):
+        raise HTTPException(status_code=400, detail="Invalid image index")
+    
+    image_info = job["images"][image_index]
+    if image_info["status"] != "completed":
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Image {image_index} is not ready. Status: {image_info['status']}"
+        )
+    
+    image_path = image_info.get("output_path")
+    if not image_path or not Path(image_path).exists():
+        raise HTTPException(status_code=404, detail="Image file not found")
+    
+    return FileResponse(
+        path=image_path,
+        media_type="image/png",
+        filename=f"batch_{job_id}_image_{image_index}.png"
+    )
+
+@app.get("/get-batch-images/{job_id}")
+async def get_batch_images(job_id: str):
+    """
+    Download all completed images from a batch generation job as a zip file
+    """
+    job = JobManager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job["type"] != "image_batch":
+        raise HTTPException(status_code=400, detail="Job is not a batch image generation job")
+    
+    # Get all completed images
+    completed_images = [img for img in job["images"] if img["status"] == "completed" and img["output_path"]]
+    
+    if len(completed_images) == 0:
+        raise HTTPException(status_code=400, detail="No completed images available for download")
+    
+    # Create temporary zip file
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
+        zip_path = tmp_zip.name
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for img in completed_images:
+                image_path = Path(img["output_path"])
+                if image_path.exists():
+                    # Add file to zip with descriptive name
+                    zip_filename = f"image_{img['index']}_{image_path.name}"
+                    zipf.write(image_path, zip_filename)
+        
+        # Return zip file and schedule cleanup
+        return FileResponse(
+            path=zip_path,
+            media_type="application/zip",
+            filename=f"batch_images_{job_id}.zip",
+            background=lambda: os.unlink(zip_path) if os.path.exists(zip_path) else None
+        )
 
 @app.get("/jobs")
 async def list_jobs():

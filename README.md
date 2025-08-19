@@ -76,6 +76,34 @@ curl -X POST "http://localhost:8000/generate-image/" \
 }
 ```
 
+### Generate Multiple Images from Text (Batch)
+
+**POST** `/generate-images-batch/`
+
+Generate multiple images from text prompts using WAN 2.2 T2V with Instagirl LoRA. The model stays loaded between generations for maximum efficiency, making this much faster than multiple single requests.
+
+**Parameters:**
+
+-   `prompts` (form field): JSON array of text descriptions for batch image generation (max 20 prompts)
+
+**Example:**
+
+```bash
+curl -X POST "http://localhost:8000/generate-images-batch/" \
+  -F 'prompts=["A beautiful woman with long flowing hair", "A serene landscape with mountains", "A futuristic cityscape at night"]'
+```
+
+**Response:**
+
+```json
+{
+	"job_id": "12345678-1234-1234-1234-123456789abc",
+	"status": "queued",
+	"total_images": 3,
+	"message": "Batch image generation job created with 3 prompts. Use /job-status/{job_id} to check progress and /get-batch-images/{job_id} to download when complete."
+}
+```
+
 ### Generate Video from Image
 
 **POST** `/generate-video-from-image/`
@@ -99,11 +127,19 @@ curl -X POST "http://localhost:8000/generate-video-from-image/" \
 
 **GET** `/job-status/{job_id}`
 
-Check the status of a generation job.
+Check the status of a generation job (single image, batch images, or video). For batch jobs, includes progress information and individual image statuses.
 
 **GET** `/get-image/{job_id}`
 
-Download the generated image for a completed image generation job.
+Download the generated image for a completed single image generation job.
+
+**GET** `/get-batch-image/{job_id}/{image_index}`
+
+Download a specific image from a completed batch generation job.
+
+**GET** `/get-batch-images/{job_id}`
+
+Download all completed images from a batch generation job as a ZIP file.
 
 **GET** `/get-video/{job_id}`
 
@@ -122,15 +158,25 @@ List all jobs (for debugging/admin purposes).
 You can test the API using curl commands or any HTTP client:
 
 ```bash
-# Test image generation
+# Test single image generation
 curl -X POST "http://localhost:8000/generate-image/" \
   -F "prompt=A beautiful portrait of a woman with flowing hair"
+
+# Test batch image generation
+curl -X POST "http://localhost:8000/generate-images-batch/" \
+  -F 'prompts=["A beautiful portrait of a woman", "A serene mountain landscape", "A futuristic city"]'
 
 # Check job status (replace job_id with actual ID from response)
 curl "http://localhost:8000/job-status/{job_id}"
 
-# Download completed image
+# Download completed single image
 curl "http://localhost:8000/get-image/{job_id}" --output generated_image.png
+
+# Download specific image from batch (index 0, 1, 2, etc.)
+curl "http://localhost:8000/get-batch-image/{job_id}/0" --output batch_image_0.png
+
+# Download all batch images as ZIP
+curl "http://localhost:8000/get-batch-images/{job_id}" --output batch_images.zip
 ```
 
 ## Model Integration
