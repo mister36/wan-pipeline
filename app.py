@@ -274,9 +274,6 @@ def process_image_generation(job_id: str, prompt: str):
         output_image_path = IMAGES_DIR / f"{job_id}.png"
         pipeline.generate_image_from_prompt(prompt, str(output_image_path))
         
-        # Clean up WAN models to free memory after generation
-        pipeline.wan_model.cleanup_models()
-        
         # Update job status
         JobManager.update_job_status(job_id, "completed", output_path=str(output_image_path))
         logger.info(f"Image generation completed for job {job_id}")
@@ -321,17 +318,12 @@ def process_batch_image_generation(job_id: str, prompts: list[str]):
                 JobManager.update_batch_image_status(job_id, i, "failed", error=error_msg)
                 # Continue with next image even if one fails
         
-        # Clean up WAN models to free memory after all generations are complete
-        pipeline.wan_model.cleanup_models()
-        logger.info(f"Batch image generation completed for job {job_id}. Model unloaded.")
+        logger.info(f"Batch image generation completed for job {job_id}.")
         
     except Exception as e:
         error_msg = f"Batch image generation failed: {str(e)}"
         logger.error(f"Batch job {job_id} failed: {error_msg}")
         JobManager.update_job_status(job_id, "failed", error=error_msg)
-        # Clean up models on error
-        if pipeline.wan_model:
-            pipeline.wan_model.cleanup_models()
 
 def process_video_generation(job_id: str, image_path: str, prompt: str, duration_seconds: float = 5.0):
     """Process video generation for I2V job"""
@@ -342,9 +334,6 @@ def process_video_generation(job_id: str, image_path: str, prompt: str, duration
         # Generate video with WAN 2.2 I2V
         output_video_path = VIDEOS_DIR / f"{job_id}.mp4"
         pipeline.generate_video_from_image(image_path, prompt, str(output_video_path), duration_seconds)
-        
-        # Clean up WAN models to free memory after generation
-        pipeline.wan_model.cleanup_models()
         
         # Update job status
         JobManager.update_job_status(job_id, "completed", output_path=str(output_video_path))
@@ -670,6 +659,45 @@ async def list_jobs():
             for job_id, job in jobs.items()
         ]
     }
+
+@app.post("/admin/cleanup-models")
+async def cleanup_models():
+    """
+    Manually cleanup models to free GPU memory (admin endpoint)
+    
+    This endpoint allows administrators to manually clean up WAN models 
+    when they want to free GPU memory. Models will be automatically 
+    reloaded when needed for the next generation.
+    """
+    try:
+        if pipeline.wan_model:
+            current_model = pipeline.wan_model.get_current_model()
+            pipeline.wan_model.cleanup_models()
+            
+            if torch.cuda.is_available():
+                gpu_memory_gb = torch.cuda.memory_allocated() / 1024**3
+                return {
+                    "status": "success",
+                    "message": "Models cleaned up successfully",
+                    "previous_model": current_model,
+                    "gpu_memory_allocated_gb": round(gpu_memory_gb, 2)
+                }
+            else:
+                return {
+                    "status": "success", 
+                    "message": "Models cleaned up successfully",
+                    "previous_model": current_model,
+                    "gpu_memory_allocated_gb": 0
+                }
+        else:
+            return {
+                "status": "info",
+                "message": "No models are currently loaded",
+                "gpu_memory_allocated_gb": 0 if not torch.cuda.is_available() else round(torch.cuda.memory_allocated() / 1024**3, 2)
+            }
+    except Exception as e:
+        logger.error(f"Failed to cleanup models: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup models: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
