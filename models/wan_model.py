@@ -344,7 +344,7 @@ class WANModel:
                 width=width,
                 num_frames=num_frames,
                 guidance_scale=3.5,
-                num_inference_steps=20,
+                num_inference_steps=30,
                 generator=generator,
             ).frames[0]
             
