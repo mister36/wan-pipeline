@@ -193,7 +193,10 @@ class WANModel:
         
         # Set up LCM scheduler for faster inference with Lightx2v LoRA
         logger.info("Setting up LCM scheduler for I2V pipeline...")
-        self.i2v_pipeline.scheduler = LCMScheduler.from_config(self.i2v_pipeline.scheduler.config)
+        # Create LCM scheduler config with compatible prediction_type
+        lcm_config = self.i2v_pipeline.scheduler.config.copy()
+        lcm_config["prediction_type"] = "epsilon"  # LCMScheduler requires epsilon, sample, or v_prediction
+        self.i2v_pipeline.scheduler = LCMScheduler.from_config(lcm_config)
         
         self.current_model = "i2v"
         
