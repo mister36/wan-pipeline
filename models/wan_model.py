@@ -357,7 +357,6 @@ class WANModel:
                 guidance_scale=1.0,  # Changed to 1 CFG as requested
                 num_inference_steps=4,  # Changed to 4 steps as requested
                 generator=generator,
-                shift=8,  # Added 8 shift as requested
             ).frames[0]
             
             # Export to video with frame interpolation to 32 fps
