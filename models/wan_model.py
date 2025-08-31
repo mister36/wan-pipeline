@@ -13,7 +13,7 @@ import tempfile
 import random
 from typing import Optional
 from pathlib import Path
-from diffusers import WanPipeline, WanImageToVideoPipeline, AutoencoderKLWan
+from diffusers import WanPipeline, WanImageToVideoPipeline, AutoencoderKLWan, LCMScheduler
 from diffusers.utils import export_to_video, load_image
 from PIL import Image
 import cv2
@@ -80,7 +80,7 @@ def export_to_video_with_interpolation(video_frames, output_path: str, source_fp
 class WANModel:
     """Wrapper for WAN 2.2 Text-to-Video and Image-to-Video models with memory-efficient loading"""
     
-    def __init__(self, device: str = "cuda", instagirl_lora_path: str = None):
+    def __init__(self, device: str = "cuda", instagirl_lora_path: str = None, lightx2v_lora_path: str = None):
         self.device = device
         self.t2v_pipeline = None  # Text-to-Video pipeline
         self.i2v_pipeline = None  # Image-to-Video pipeline
@@ -88,6 +88,7 @@ class WANModel:
         self.t2v_model_id = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
         self.i2v_model_id = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
         self.instagirl_lora_path = instagirl_lora_path
+        self.lightx2v_lora_path = lightx2v_lora_path
         self.dtype = torch.bfloat16
         self.current_model = None  # Track which model is currently loaded
         
@@ -184,6 +185,16 @@ class WANModel:
             torch_dtype=self.dtype
         )
         self.i2v_pipeline.to(self.device)
+        
+        # Load Lightx2v LoRA for I2V if path is provided
+        if self.lightx2v_lora_path:
+            logger.info("Loading Lightx2v LoRA for I2V pipeline...")
+            self.i2v_pipeline.load_lora_weights(self.lightx2v_lora_path)
+        
+        # Set up LCM scheduler for faster inference with Lightx2v LoRA
+        logger.info("Setting up LCM scheduler for I2V pipeline...")
+        self.i2v_pipeline.scheduler = LCMScheduler.from_config(self.i2v_pipeline.scheduler.config)
+        
         self.current_model = "i2v"
         
         logger.info(f"I2V model loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
@@ -343,9 +354,10 @@ class WANModel:
                 height=height,
                 width=width,
                 num_frames=num_frames,
-                guidance_scale=3.5,
-                num_inference_steps=40,
+                guidance_scale=1.0,  # Changed to 1 CFG as requested
+                num_inference_steps=4,  # Changed to 4 steps as requested
                 generator=generator,
+                shift=8,  # Added 8 shift as requested
             ).frames[0]
             
             # Export to video with frame interpolation to 32 fps

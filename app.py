@@ -219,6 +219,32 @@ def download_instagirl_lora():
         logger.error(f"Failed to download Instagirl lora: {e}")
         raise RuntimeError(f"Failed to download Instagirl lora: {e}")
 
+def download_lightx2v_lora():
+    """Download Lightx2v LoRA if it doesn't exist"""
+    lora_path = MODELS_DIR / "lightx2v_lora.safetensors"
+    
+    if lora_path.exists():
+        logger.info("Lightx2v LoRA already exists, skipping download")
+        return str(lora_path)
+    
+    logger.info("Downloading Lightx2v LoRA...")
+    lora_url = "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors"
+    
+    try:
+        response = requests.get(lora_url, stream=True)
+        response.raise_for_status()
+        
+        with open(lora_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        logger.info(f"Lightx2v LoRA downloaded successfully: {lora_path}")
+        return str(lora_path)
+        
+    except Exception as e:
+        logger.error(f"Failed to download Lightx2v LoRA: {e}")
+        raise RuntimeError(f"Failed to download Lightx2v LoRA: {e}")
+
 class MediaPipeline:
     def __init__(self):
         self.device = "cuda"
@@ -229,11 +255,16 @@ class MediaPipeline:
         
     async def load_models(self):
         """Initialize models - WAN models will be loaded on-demand to save memory"""
-        # Download Instagirl lora first
-        lora_path = download_instagirl_lora()
+        # Download both LoRAs
+        instagirl_lora_path = download_instagirl_lora()
+        lightx2v_lora_path = download_lightx2v_lora()
         
-        # Initialize WAN model with lora path
-        self.wan_model = WANModel(device=self.device, instagirl_lora_path=lora_path)
+        # Initialize WAN model with both lora paths
+        self.wan_model = WANModel(
+            device=self.device, 
+            instagirl_lora_path=instagirl_lora_path,
+            lightx2v_lora_path=lightx2v_lora_path
+        )
         self.wan_model.load_model()
         
         logger.info("Model wrapper initialized successfully - WAN models will load on-demand")
