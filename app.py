@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="WAN Media Pipeline API",
-    description="API for generating images and videos using WAN 2.2 T2V with Instagirl lora and I2V models",
-    version="2.0.0"
+    description="API for generating images and videos using WAN 2.2 T2V with Instagirl lora and I2V with Lightning LoRAs",
+    version="2.1.0"
 )
 
 # Create necessary directories
@@ -219,31 +219,7 @@ def download_instagirl_lora():
         logger.error(f"Failed to download Instagirl lora: {e}")
         raise RuntimeError(f"Failed to download Instagirl lora: {e}")
 
-def download_lightx2v_lora():
-    """Download Lightx2v LoRA if it doesn't exist"""
-    lora_path = MODELS_DIR / "lightx2v_lora.safetensors"
-    
-    if lora_path.exists():
-        logger.info("Lightx2v LoRA already exists, skipping download")
-        return str(lora_path)
-    
-    logger.info("Downloading Lightx2v LoRA...")
-    lora_url = "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors"
-    
-    try:
-        response = requests.get(lora_url, stream=True)
-        response.raise_for_status()
-        
-        with open(lora_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        
-        logger.info(f"Lightx2v LoRA downloaded successfully: {lora_path}")
-        return str(lora_path)
-        
-    except Exception as e:
-        logger.error(f"Failed to download Lightx2v LoRA: {e}")
-        raise RuntimeError(f"Failed to download Lightx2v LoRA: {e}")
+
 
 class MediaPipeline:
     def __init__(self):
@@ -255,15 +231,13 @@ class MediaPipeline:
         
     async def load_models(self):
         """Initialize models - WAN models will be loaded on-demand to save memory"""
-        # Download both LoRAs
+        # Download Instagirl LoRA (Lightning LoRAs will be downloaded on-demand from HuggingFace)
         instagirl_lora_path = download_instagirl_lora()
-        lightx2v_lora_path = download_lightx2v_lora()
         
-        # Initialize WAN model with both lora paths
+        # Initialize WAN model with Instagirl lora path
         self.wan_model = WANModel(
             device=self.device, 
-            instagirl_lora_path=instagirl_lora_path,
-            lightx2v_lora_path=lightx2v_lora_path
+            instagirl_lora_path=instagirl_lora_path
         )
         self.wan_model.load_model()
         

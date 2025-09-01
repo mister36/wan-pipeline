@@ -13,8 +13,11 @@ import tempfile
 import random
 from typing import Optional
 from pathlib import Path
-from diffusers import WanPipeline, WanImageToVideoPipeline, AutoencoderKLWan, LCMScheduler
+from diffusers import WanPipeline, WanImageToVideoPipeline, AutoencoderKLWan
 from diffusers.utils import export_to_video, load_image
+from diffusers.loaders.lora_conversion_utils import _convert_non_diffusers_wan_lora_to_diffusers
+from huggingface_hub import hf_hub_download
+import safetensors.torch as st
 from PIL import Image
 import cv2
 import numpy as np
@@ -80,7 +83,7 @@ def export_to_video_with_interpolation(video_frames, output_path: str, source_fp
 class WANModel:
     """Wrapper for WAN 2.2 Text-to-Video and Image-to-Video models with memory-efficient loading"""
     
-    def __init__(self, device: str = "cuda", instagirl_lora_path: str = None, lightx2v_lora_path: str = None):
+    def __init__(self, device: str = "cuda", instagirl_lora_path: str = None):
         self.device = device
         self.t2v_pipeline = None  # Text-to-Video pipeline
         self.i2v_pipeline = None  # Image-to-Video pipeline
@@ -88,7 +91,6 @@ class WANModel:
         self.t2v_model_id = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
         self.i2v_model_id = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
         self.instagirl_lora_path = instagirl_lora_path
-        self.lightx2v_lora_path = lightx2v_lora_path
         self.dtype = torch.bfloat16
         self.current_model = None  # Track which model is currently loaded
         
@@ -162,7 +164,7 @@ class WANModel:
         logger.info(f"T2V model loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
     
     def _load_i2v_model(self):
-        """Load I2V model, unloading T2V if necessary"""
+        """Load I2V model with dual Lightning LoRAs, unloading T2V if necessary"""
         if self.current_model == "i2v" and self.i2v_pipeline is not None:
             return  # Already loaded
             
@@ -186,21 +188,33 @@ class WANModel:
         )
         self.i2v_pipeline.to(self.device)
         
-        # Load Lightx2v LoRA for I2V if path is provided
-        if self.lightx2v_lora_path:
-            logger.info("Loading Lightx2v LoRA for I2V pipeline...")
-            self.i2v_pipeline.load_lora_weights(self.lightx2v_lora_path)
+        # Load Wan 2.2 Lightning LoRAs for I2V - dual LoRA setup
+        logger.info("Loading Wan 2.2 Lightning LoRAs for I2V pipeline...")
         
-        # Set up LCM scheduler for faster inference with Lightx2v LoRA
-        logger.info("Setting up LCM scheduler for I2V pipeline...")
-        # Create LCM scheduler config with compatible prediction_type
-        lcm_config = self.i2v_pipeline.scheduler.config.copy()
-        lcm_config["prediction_type"] = "epsilon"  # LCMScheduler requires epsilon, sample, or v_prediction
-        self.i2v_pipeline.scheduler = LCMScheduler.from_config(lcm_config)
+        # 1) High-noise LoRA → transformer
+        logger.info("Downloading and loading high-noise LoRA to transformer...")
+        hi_path = hf_hub_download(
+            "lightx2v/Wan2.2-Lightning",
+            "Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/high_noise_model.safetensors"
+        )
+        self.i2v_pipeline.load_lora_weights(hi_path)  # applies to pipe.transformer
+        
+        # 2) Low-noise LoRA → transformer_2
+        logger.info("Downloading and loading low-noise LoRA to transformer_2...")
+        lo_path = hf_hub_download(
+            "lightx2v/Wan2.2-Lightning",
+            "Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/low_noise_model.safetensors"
+        )
+        state = st.load_file(lo_path)
+        state = _convert_non_diffusers_wan_lora_to_diffusers(state)
+        self.i2v_pipeline.transformer_2.load_lora_adapter(state)  # apply to the low-noise expert
+        
+        # Keep the default Wan scheduler (no LCM override for Lightning LoRAs)
+        logger.info("Using default Wan scheduler for Lightning LoRAs...")
         
         self.current_model = "i2v"
         
-        logger.info(f"I2V model loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+        logger.info(f"I2V model with Lightning LoRAs loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
     
     def generate_video_from_prompt(
         self, 
@@ -357,8 +371,8 @@ class WANModel:
                 height=height,
                 width=width,
                 num_frames=num_frames,
-                guidance_scale=1.0,  # Changed to 1 CFG as requested
-                num_inference_steps=4,  # Changed to 4 steps as requested
+                guidance_scale=1.0,  # Lightning LoRA works with CFG=1.0
+                num_inference_steps=5,  # Lightning LoRA optimized for 4-6 steps, using 5
                 generator=generator,
             ).frames[0]
             
