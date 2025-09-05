@@ -252,7 +252,7 @@ class MediaPipeline:
             height=1280  # Vertical format for portrait shots
         )
     
-    def generate_video_from_image(self, image_path: str, prompt: str, output_path: str, duration_seconds: float = 5.0) -> str:
+    def generate_video_from_image(self, image_path: str, prompt: str, output_path: str, duration_seconds: float = 5.0, resolution: str = "480p") -> str:
         """Generate video from image and prompt using WAN 2.2 I2V"""
         # Calculate number of frames based on duration and fixed fps of 16
         fps = 16
@@ -263,7 +263,8 @@ class MediaPipeline:
             prompt=prompt,
             output_path=output_path,
             num_frames=num_frames,
-            fps=fps
+            fps=fps,
+            resolution=resolution
         )
 
 # Initialize pipeline
@@ -330,7 +331,7 @@ def process_batch_image_generation(job_id: str, prompts: list[str]):
         logger.error(f"Batch job {job_id} failed: {error_msg}")
         JobManager.update_job_status(job_id, "failed", error=error_msg)
 
-def process_video_generation(job_id: str, image_path: str, prompt: str, duration_seconds: float = 5.0):
+def process_video_generation(job_id: str, image_path: str, prompt: str, duration_seconds: float = 5.0, resolution: str = "480p"):
     """Process video generation for I2V job"""
     try:
         JobManager.update_job_status(job_id, "processing")
@@ -338,7 +339,7 @@ def process_video_generation(job_id: str, image_path: str, prompt: str, duration
         
         # Generate video with WAN 2.2 I2V
         output_video_path = VIDEOS_DIR / f"{job_id}.mp4"
-        pipeline.generate_video_from_image(image_path, prompt, str(output_video_path), duration_seconds)
+        pipeline.generate_video_from_image(image_path, prompt, str(output_video_path), duration_seconds, resolution)
         
         # Update job status
         JobManager.update_job_status(job_id, "completed", output_path=str(output_video_path))
@@ -451,7 +452,8 @@ async def generate_video_from_image(
     background_tasks: BackgroundTasks,
     image: UploadFile = File(..., description="Input image file"),
     prompt: str = Form(..., description="Text prompt for video generation"),
-    duration_seconds: float = Form(5.0, description="Duration of the generated video in seconds (default: 5.0)", ge=0.5, le=30.0)
+    duration_seconds: float = Form(5.0, description="Duration of the generated video in seconds (default: 5.0)", ge=0.5, le=30.0),
+    resolution: str = Form("480p", description="Video resolution - '480p' (default) or '720p'")
 ):
     """
     Generate a video from image and prompt using WAN 2.2 I2V
@@ -466,6 +468,10 @@ async def generate_video_from_image(
     if len(prompt.strip()) == 0:
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
     
+    # Validate resolution parameter
+    if resolution not in ["480p", "720p"]:
+        raise HTTPException(status_code=400, detail="Resolution must be either '480p' or '720p'")
+    
     # Create job
     job_id = JobManager.create_job(prompt, "video", image.filename)
     
@@ -474,15 +480,15 @@ async def generate_video_from_image(
     with open(image_path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
     
-    logger.info(f"Created video generation job {job_id} - Prompt: {prompt}, Duration: {duration_seconds}s")
+    logger.info(f"Created video generation job {job_id} - Prompt: {prompt}, Duration: {duration_seconds}s, Resolution: {resolution}")
     
     # Start processing in background
-    background_tasks.add_task(process_video_generation, job_id, str(image_path), prompt, duration_seconds)
+    background_tasks.add_task(process_video_generation, job_id, str(image_path), prompt, duration_seconds, resolution)
     
     return {
         "job_id": job_id,
         "status": "queued",
-        "message": "Video generation job created and processing started. Use /job-status/{job_id} to check progress and /get-video/{job_id} to download when complete."
+        "message": f"Video generation job created and processing started at {resolution}. Use /job-status/{{job_id}} to check progress and /get-video/{{job_id}} to download when complete."
     }
 
 @app.get("/job-status/{job_id}")

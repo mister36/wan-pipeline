@@ -325,7 +325,8 @@ class WANModel:
         prompt: str,
         output_path: str,
         num_frames: int = 81,
-        fps: int = 16
+        fps: int = 16,
+        resolution: str = "480p"
     ) -> str:
         """
         Generate a video from an image and prompt using WAN 2.2 I2V
@@ -336,6 +337,7 @@ class WANModel:
             output_path: Path to save the generated video
             num_frames: Number of frames to generate (calculated from duration_seconds * fps in the API layer)
             fps: Frames per second (fixed at 16 fps for consistent quality)
+            resolution: Target resolution - "480p" (default) or "720p"
             
         Returns:
             Path to the generated video file
@@ -343,13 +345,17 @@ class WANModel:
         # Load I2V model on-demand
         self._load_i2v_model()
             
-        logger.info(f"Generating video from image: {image_path} with prompt: '{prompt}' using WAN 2.2 I2V")
+        logger.info(f"Generating video from image: {image_path} with prompt: '{prompt}' using WAN 2.2 I2V at {resolution}")
         
         # Load and process the input image
         image = load_image(image_path)
         
-        # Calculate optimal dimensions based on WAN 2.2 requirements
-        max_area = 480 * 832
+        # Calculate optimal dimensions based on WAN 2.2 requirements and resolution choice
+        if resolution == "720p":
+            max_area = 720 * 1280  # 720p area for higher quality
+        else:  # Default to 480p
+            max_area = 480 * 832   # Original 480p area
+            
         aspect_ratio = image.height / image.width
         mod_value = self.i2v_pipeline.vae_scale_factor_spatial * self.i2v_pipeline.transformer.config.patch_size[1]
         height = round(np.sqrt(max_area * aspect_ratio)) // mod_value * mod_value
