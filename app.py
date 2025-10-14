@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="WAN Media Pipeline API",
-    description="API for generating images and videos using WAN 2.2 T2V with Instagirl lora and I2V with Lightning LoRAs",
-    version="2.1.0"
+    description="API for generating images and videos using WAN 2.2 T2V with Instagirl lora, I2V with Lightning LoRAs, and I2V first-last frame",
+    version="2.2.0"
 )
 
 # Create necessary directories
@@ -358,6 +358,59 @@ def process_video_generation(job_id: str, image_path: str, prompt: str, duration
         if Path(image_path).exists() and TEMP_DIR.name in str(image_path):
             os.remove(image_path)
 
+def process_first_last_video_generation(
+    job_id: str, 
+    start_image_path: str, 
+    end_image_path: str, 
+    prompt: str, 
+    duration_seconds: float = 5.0,
+    num_inference_steps: int = 8,
+    guidance_scale: float = 1.0,
+    guidance_scale_2: float = 1.0,
+    shift: float = 8.0,
+    seed: int = None
+):
+    """Process video generation for first-last frame I2V job"""
+    try:
+        JobManager.update_job_status(job_id, "processing")
+        logger.info(f"Starting first-last frame video generation for job {job_id}")
+        
+        # Generate video with WAN 2.2 I2V first-last frame
+        output_video_path = VIDEOS_DIR / f"{job_id}.mp4"
+        pipeline.wan_model.generate_video_from_first_last_frame(
+            start_image_path=start_image_path,
+            end_image_path=end_image_path,
+            prompt=prompt,
+            output_path=str(output_video_path),
+            duration_seconds=duration_seconds,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            guidance_scale_2=guidance_scale_2,
+            shift=shift,
+            seed=seed
+        )
+        
+        # Update job status
+        JobManager.update_job_status(job_id, "completed", output_path=str(output_video_path))
+        logger.info(f"First-last frame video generation completed for job {job_id}")
+        
+        # Clean up input images
+        if Path(start_image_path).exists() and TEMP_DIR.name in str(start_image_path):
+            os.remove(start_image_path)
+        if Path(end_image_path).exists() and TEMP_DIR.name in str(end_image_path):
+            os.remove(end_image_path)
+        
+    except Exception as e:
+        error_msg = f"First-last frame video generation failed: {str(e)}"
+        logger.error(f"Job {job_id} failed: {error_msg}")
+        JobManager.update_job_status(job_id, "failed", error=error_msg)
+        
+        # Clean up input images on error
+        if Path(start_image_path).exists() and TEMP_DIR.name in str(start_image_path):
+            os.remove(start_image_path)
+        if Path(end_image_path).exists() and TEMP_DIR.name in str(end_image_path):
+            os.remove(end_image_path)
+
 @app.on_event("startup")
 async def startup_event():
     """Load jobs and initialize models on startup"""
@@ -491,6 +544,81 @@ async def generate_video_from_image(
         "message": f"Video generation job created and processing started at {resolution}. Use /job-status/{{job_id}} to check progress and /get-video/{{job_id}} to download when complete."
     }
 
+@app.post("/generate-video-from-first-last/")
+async def generate_video_from_first_last(
+    background_tasks: BackgroundTasks,
+    start_image: UploadFile = File(..., description="Start frame image file"),
+    end_image: UploadFile = File(..., description="End frame image file"),
+    prompt: str = Form("animate", description="Text prompt describing the transition between images"),
+    negative_prompt: str = Form(
+        "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走,过曝，",
+        description="Negative prompt"
+    ),
+    duration_seconds: float = Form(5.0, description="Video duration in seconds (default: 5.0)", ge=0.5, le=10.0),
+    num_inference_steps: int = Form(8, description="Number of inference steps (default: 8)", ge=1, le=30),
+    guidance_scale: float = Form(1.0, description="Guidance scale for high noise (default: 1.0)", ge=0.0, le=10.0),
+    guidance_scale_2: float = Form(1.0, description="Guidance scale for low noise (default: 1.0)", ge=0.0, le=10.0),
+    shift: float = Form(8.0, description="Scheduler shift parameter (default: 8.0)", ge=1.0, le=10.0),
+    seed: int = Form(None, description="Random seed for reproducibility (None for random)")
+):
+    """
+    Generate a video from start and end frame images using WAN 2.2 I2V first-last frame
+    
+    This endpoint uses a specialized model variant with fused Lightning LoRAs that enables
+    precise control over both the starting and ending frames, creating smooth transitions
+    between them. The image processing automatically handles dimension alignment to prevent
+    ghosting artifacts.
+    
+    Returns a job ID immediately while processing begins in the background.
+    """
+    
+    # Validate inputs
+    if not start_image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Start image file must be an image")
+    
+    if not end_image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="End image file must be an image")
+    
+    if len(prompt.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+    
+    # Create job
+    job_id = JobManager.create_job(prompt, "video_first_last", f"{start_image.filename} -> {end_image.filename}")
+    
+    # Save uploaded images temporarily for processing
+    start_image_path = TEMP_DIR / f"start_{job_id}_{start_image.filename}"
+    end_image_path = TEMP_DIR / f"end_{job_id}_{end_image.filename}"
+    
+    with open(start_image_path, "wb") as buffer:
+        shutil.copyfileobj(start_image.file, buffer)
+    
+    with open(end_image_path, "wb") as buffer:
+        shutil.copyfileobj(end_image.file, buffer)
+    
+    logger.info(f"Created first-last frame video generation job {job_id}")
+    logger.info(f"Prompt: {prompt}, Duration: {duration_seconds}s, Steps: {num_inference_steps}, Shift: {shift}, Seed: {seed}")
+    
+    # Start processing in background
+    background_tasks.add_task(
+        process_first_last_video_generation,
+        job_id,
+        str(start_image_path),
+        str(end_image_path),
+        prompt,
+        duration_seconds,
+        num_inference_steps,
+        guidance_scale,
+        guidance_scale_2,
+        shift,
+        seed
+    )
+    
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "message": "First-last frame video generation job created and processing started. Use /job-status/{job_id} to check progress and /get-video/{job_id} to download when complete."
+    }
+
 @app.get("/job-status/{job_id}")
 async def get_job_status(job_id: str):
     """
@@ -564,7 +692,7 @@ async def get_video(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    if job["type"] != "video":
+    if job["type"] not in ["video", "video_first_last"]:
         raise HTTPException(status_code=400, detail="Job is not a video generation job")
     
     if job["status"] != "completed":

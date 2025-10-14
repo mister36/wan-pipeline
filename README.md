@@ -4,10 +4,11 @@ A FastAPI server for generating images and videos using WAN 2.2 Text-to-Video (T
 
 ## Pipeline Overview
 
-The media generation pipeline supports two main workflows:
+The media generation pipeline supports three main workflows:
 
 1. **Text-to-Image Generation**: Uses WAN 2.2 T2V with Instagirl LoRA to generate high-quality portrait images from text prompts
 2. **Image-to-Video Generation**: Uses WAN 2.2 I2V to animate existing images based on text prompts, creating dynamic videos
+3. **First-Last Frame Video Generation**: Uses WAN 2.2 I2V with fused Lightning LoRAs to generate smooth transitions between two keyframe images
 
 ## Installation
 
@@ -114,14 +115,58 @@ Generate a video from an uploaded image and text prompt using WAN 2.2 I2V. The o
 
 -   `image` (file): Input image file
 -   `prompt` (form field): Text description for video animation
+-   `duration_seconds` (optional): Video duration in seconds (default: 5.0, range: 0.5-30.0)
+-   `resolution` (optional): Video resolution - "480p" (default) or "720p"
 
 **Example:**
 
 ```bash
 curl -X POST "http://localhost:8000/generate-video-from-image/" \
   -F "image=@path/to/your/image.jpg" \
-  -F "prompt=The person in the image smiling and looking around"
+  -F "prompt=The person in the image smiling and looking around" \
+  -F "duration_seconds=5.0" \
+  -F "resolution=480p"
 ```
+
+### Generate Video from First and Last Frame
+
+**POST** `/generate-video-from-first-last/`
+
+Generate a video transitioning smoothly between two keyframe images using WAN 2.2 I2V with fused Lightning LoRAs. This specialized endpoint uses advanced LoRA fusion techniques to ensure precise control over both start and end frames while preventing ghosting artifacts through intelligent image alignment.
+
+**Parameters:**
+
+-   `start_image` (file): Start frame image file
+-   `end_image` (file): End frame image file
+-   `prompt` (form field): Text description for the transition (default: "animate")
+-   `negative_prompt` (optional): Negative prompt for quality control
+-   `duration_seconds` (optional): Video duration in seconds (default: 5.0, range: 0.5-10.0)
+-   `num_inference_steps` (optional): Number of inference steps (default: 8, range: 1-30)
+-   `guidance_scale` (optional): Guidance scale for high noise (default: 1.0, range: 0.0-10.0)
+-   `guidance_scale_2` (optional): Guidance scale for low noise (default: 1.0, range: 0.0-10.0)
+-   `shift` (optional): Scheduler shift parameter (default: 8.0, range: 1.0-10.0)
+-   `seed` (optional): Random seed for reproducibility (None for random)
+
+**Example:**
+
+```bash
+curl -X POST "http://localhost:8000/generate-video-from-first-last/" \
+  -F "start_image=@path/to/start_frame.jpg" \
+  -F "end_image=@path/to/end_frame.jpg" \
+  -F "prompt=smooth transition with natural movement" \
+  -F "duration_seconds=5.0" \
+  -F "num_inference_steps=8" \
+  -F "shift=8.0" \
+  -F "seed=42"
+```
+
+**Key Features:**
+
+-   **Dual Guidance Control**: Separate guidance scales for high and low noise levels
+-   **Automatic Image Alignment**: Images are processed to match dimensions and prevent ghosting
+-   **Fused Lightning LoRAs**: Uses specialized LoRA fusion with different scales for transformer components
+-   **Configurable Scheduler**: Adjustable shift parameter for fine-tuning motion dynamics
+-   **Reproducible Results**: Optional seed parameter for consistent outputs
 
 ### Job Management Endpoints
 
@@ -166,11 +211,30 @@ curl -X POST "http://localhost:8000/generate-image/" \
 curl -X POST "http://localhost:8000/generate-images-batch/" \
   -F 'prompts=["A beautiful portrait of a woman", "A serene mountain landscape", "A futuristic city"]'
 
+# Test image-to-video generation
+curl -X POST "http://localhost:8000/generate-video-from-image/" \
+  -F "image=@path/to/image.jpg" \
+  -F "prompt=The person smiling and moving gracefully" \
+  -F "duration_seconds=5.0" \
+  -F "resolution=480p"
+
+# Test first-last frame video generation
+curl -X POST "http://localhost:8000/generate-video-from-first-last/" \
+  -F "start_image=@path/to/start.jpg" \
+  -F "end_image=@path/to/end.jpg" \
+  -F "prompt=smooth natural transition" \
+  -F "duration_seconds=5.0" \
+  -F "num_inference_steps=8" \
+  -F "seed=42"
+
 # Check job status (replace job_id with actual ID from response)
 curl "http://localhost:8000/job-status/{job_id}"
 
 # Download completed single image
 curl "http://localhost:8000/get-image/{job_id}" --output generated_image.png
+
+# Download completed video
+curl "http://localhost:8000/get-video/{job_id}" --output generated_video.mp4
 
 # Download specific image from batch (index 0, 1, 2, etc.)
 curl "http://localhost:8000/get-batch-image/{job_id}/0" --output batch_image_0.png
@@ -186,21 +250,29 @@ curl "http://localhost:8000/get-batch-images/{job_id}" --output batch_images.zip
 The server uses **real WAN 2.2 model integrations** with memory-efficient loading:
 
 -   **WAN 2.2 T2V**: Text-to-video generation with Instagirl LoRA for high-quality portrait generation
--   **WAN 2.2 I2V**: Image-to-video generation for animating static images
+-   **WAN 2.2 I2V**: Image-to-video generation for animating static images with Lightning LoRAs
+-   **WAN 2.2 I2V First-Last Frame**: Specialized first-last frame video generation with fused Lightning LoRAs for precise keyframe control
 -   **Automatic Model Management**: Models are loaded on-demand and unloaded when not in use to optimize GPU memory
 
 ### Model Loading Behavior
 
 1. **On-Demand Loading**: Models are only loaded when needed for specific tasks
-2. **Memory Optimization**: Only one model type (T2V or I2V) is loaded at a time
-3. **Automatic Cleanup**: Models are automatically unloaded after generation to free GPU memory
+2. **Memory Optimization**: Only one model variant is loaded at a time (T2V, I2V, or I2V First-Last)
+3. **Automatic Cleanup**: Models are automatically unloaded when switching between variants to free GPU memory
 4. **Hardware Detection**: Automatically uses CUDA if available, with proper memory management
+
+### LoRA Integration
+
+-   **T2V Model**: Uses Instagirl LoRA (automatically downloaded) for enhanced portrait generation
+-   **I2V Model**: Uses dual Lightning LoRAs from `lightx2v/Wan2.2-Lightning` (high-noise and low-noise experts)
+-   **I2V First-Last Model**: Uses fused Lightning LoRAs from `Kijai/WanVideo_comfy` with specialized fusion scales (3.0 for transformer, 1.0 for transformer_2)
 
 ### Features
 
--   **Instagirl LoRA Integration**: Automatically downloads and applies Instagirl LoRA for enhanced portrait generation
+-   **Advanced LoRA Fusion**: First-last frame model uses specialized LoRA fusion techniques for optimal quality
 -   **Job-Based Processing**: Asynchronous background processing with status tracking
 -   **Memory Efficient**: Dynamic model loading/unloading to support multiple concurrent requests
+-   **Intelligent Image Processing**: Automatic dimension alignment and cropping to prevent ghosting artifacts
 -   **Vertical Format Optimization**: Configured for portrait-oriented content (720x1280)
 
 ## Directory Structure
