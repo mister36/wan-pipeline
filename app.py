@@ -252,7 +252,7 @@ class MediaPipeline:
             height=1280  # Vertical format for portrait shots
         )
     
-    def generate_video_from_image(self, image_path: str, prompt: str, output_path: str, duration_seconds: float = 5.0, resolution: str = "480p") -> str:
+    def generate_video_from_image(self, image_path: str, prompt: str, output_path: str, duration_seconds: float = 5.0, resolution: str = "480p", use_lightning_loras: bool = True) -> str:
         """Generate video from image and prompt using WAN 2.2 I2V"""
         # Calculate number of frames based on duration and fixed fps of 16
         fps = 16
@@ -264,7 +264,8 @@ class MediaPipeline:
             output_path=output_path,
             num_frames=num_frames,
             fps=fps,
-            resolution=resolution
+            resolution=resolution,
+            use_lightning_loras=use_lightning_loras
         )
 
 # Initialize pipeline
@@ -331,15 +332,16 @@ def process_batch_image_generation(job_id: str, prompts: list[str]):
         logger.error(f"Batch job {job_id} failed: {error_msg}")
         JobManager.update_job_status(job_id, "failed", error=error_msg)
 
-def process_video_generation(job_id: str, image_path: str, prompt: str, duration_seconds: float = 5.0, resolution: str = "480p"):
+def process_video_generation(job_id: str, image_path: str, prompt: str, duration_seconds: float = 5.0, resolution: str = "480p", use_lightning_loras: bool = True):
     """Process video generation for I2V job"""
     try:
         JobManager.update_job_status(job_id, "processing")
-        logger.info(f"Starting video generation for job {job_id}")
+        lora_status = "with Lightning LoRAs" if use_lightning_loras else "without LoRAs"
+        logger.info(f"Starting video generation for job {job_id} {lora_status}")
         
         # Generate video with WAN 2.2 I2V
         output_video_path = VIDEOS_DIR / f"{job_id}.mp4"
-        pipeline.generate_video_from_image(image_path, prompt, str(output_video_path), duration_seconds, resolution)
+        pipeline.generate_video_from_image(image_path, prompt, str(output_video_path), duration_seconds, resolution, use_lightning_loras)
         
         # Update job status
         JobManager.update_job_status(job_id, "completed", output_path=str(output_video_path))
@@ -506,10 +508,14 @@ async def generate_video_from_image(
     image: UploadFile = File(..., description="Input image file"),
     prompt: str = Form(..., description="Text prompt for video generation"),
     duration_seconds: float = Form(5.0, description="Duration of the generated video in seconds (default: 5.0)", ge=0.5, le=30.0),
-    resolution: str = Form("480p", description="Video resolution - '480p' (default) or '720p'")
+    resolution: str = Form("480p", description="Video resolution - '480p' (default) or '720p'"),
+    use_lightning_loras: bool = Form(True, description="Use Lightning LoRAs for faster generation (5 steps, CFG 1.0). If False, uses base model (36 steps, CFG 1.1)")
 ):
     """
     Generate a video from image and prompt using WAN 2.2 I2V
+    
+    By default, uses Lightning LoRAs for fast generation (5 steps). 
+    Set use_lightning_loras=false to disable LoRAs and use the base model with 36 steps and CFG 1.1.
     
     Returns a job ID immediately while processing begins in the background.
     """
@@ -533,15 +539,16 @@ async def generate_video_from_image(
     with open(image_path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
     
-    logger.info(f"Created video generation job {job_id} - Prompt: {prompt}, Duration: {duration_seconds}s, Resolution: {resolution}")
+    lora_status = "with Lightning LoRAs" if use_lightning_loras else "without LoRAs (base model)"
+    logger.info(f"Created video generation job {job_id} - Prompt: {prompt}, Duration: {duration_seconds}s, Resolution: {resolution}, {lora_status}")
     
     # Start processing in background
-    background_tasks.add_task(process_video_generation, job_id, str(image_path), prompt, duration_seconds, resolution)
+    background_tasks.add_task(process_video_generation, job_id, str(image_path), prompt, duration_seconds, resolution, use_lightning_loras)
     
     return {
         "job_id": job_id,
         "status": "queued",
-        "message": f"Video generation job created and processing started at {resolution}. Use /job-status/{{job_id}} to check progress and /get-video/{{job_id}} to download when complete."
+        "message": f"Video generation job created and processing started at {resolution} {lora_status}. Use /job-status/{{job_id}} to check progress and /get-video/{{job_id}} to download when complete."
     }
 
 @app.post("/generate-video-from-first-last/")

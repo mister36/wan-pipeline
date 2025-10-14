@@ -116,12 +116,14 @@ class WANModel:
         
         logger.info(f"T2V model loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
     
-    def _load_i2v_model(self):
-        """Load I2V model with dual Lightning LoRAs, unloading T2V if necessary"""
-        if self.current_model == "i2v" and self.i2v_pipeline is not None:
+    def _load_i2v_model(self, use_lightning_loras: bool = True):
+        """Load I2V model with optional Lightning LoRAs, unloading T2V if necessary"""
+        # Check if already loaded with correct configuration
+        model_key = "i2v" if use_lightning_loras else "i2v_no_lora"
+        if self.current_model == model_key and self.i2v_pipeline is not None:
             return  # Already loaded
             
-        logger.info("Loading WAN 2.2 I2V model...")
+        logger.info(f"Loading WAN 2.2 I2V model {'with Lightning LoRAs' if use_lightning_loras else 'without LoRAs'}...")
         
         # Unload T2V model if it's currently loaded
         if self.current_model == "t2v":
@@ -133,6 +135,15 @@ class WANModel:
             gc.collect()
             torch.cuda.empty_cache()
         
+        # Unload I2V if loaded with different configuration
+        if self.current_model in ["i2v", "i2v_no_lora"] and self.current_model != model_key:
+            logger.info("Unloading I2V model to reload with different configuration...")
+            if self.i2v_pipeline is not None:
+                del self.i2v_pipeline
+                self.i2v_pipeline = None
+            gc.collect()
+            torch.cuda.empty_cache()
+        
         # Load I2V pipeline
         logger.info("Loading I2V pipeline...")
         self.i2v_pipeline = WanImageToVideoPipeline.from_pretrained(
@@ -141,33 +152,37 @@ class WANModel:
         )
         self.i2v_pipeline.to(self.device)
         
-        # Load Wan 2.2 Lightning LoRAs for I2V - dual LoRA setup
-        logger.info("Loading Wan 2.2 Lightning LoRAs for I2V pipeline...")
+        if use_lightning_loras:
+            # Load Wan 2.2 Lightning LoRAs for I2V - dual LoRA setup
+            logger.info("Loading Wan 2.2 Lightning LoRAs for I2V pipeline...")
+            
+            # 1) High-noise LoRA → transformer
+            logger.info("Downloading and loading high-noise LoRA to transformer...")
+            hi_path = hf_hub_download(
+                "lightx2v/Wan2.2-Lightning",
+                "Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/high_noise_model.safetensors"
+            )
+            self.i2v_pipeline.load_lora_weights(hi_path)  # applies to pipe.transformer
+            
+            # 2) Low-noise LoRA → transformer_2
+            logger.info("Downloading and loading low-noise LoRA to transformer_2...")
+            lo_path = hf_hub_download(
+                "lightx2v/Wan2.2-Lightning",
+                "Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/low_noise_model.safetensors"
+            )
+            state = st.load_file(lo_path)
+            state = _convert_non_diffusers_wan_lora_to_diffusers(state)
+            self.i2v_pipeline.transformer_2.load_lora_adapter(state)  # apply to the low-noise expert
+            
+            # Keep the default Wan scheduler (no LCM override for Lightning LoRAs)
+            logger.info("Using default Wan scheduler for Lightning LoRAs...")
+        else:
+            logger.info("Skipping LoRA loading - using base model with standard settings...")
         
-        # 1) High-noise LoRA → transformer
-        logger.info("Downloading and loading high-noise LoRA to transformer...")
-        hi_path = hf_hub_download(
-            "lightx2v/Wan2.2-Lightning",
-            "Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/high_noise_model.safetensors"
-        )
-        self.i2v_pipeline.load_lora_weights(hi_path)  # applies to pipe.transformer
+        self.current_model = model_key
         
-        # 2) Low-noise LoRA → transformer_2
-        logger.info("Downloading and loading low-noise LoRA to transformer_2...")
-        lo_path = hf_hub_download(
-            "lightx2v/Wan2.2-Lightning",
-            "Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/low_noise_model.safetensors"
-        )
-        state = st.load_file(lo_path)
-        state = _convert_non_diffusers_wan_lora_to_diffusers(state)
-        self.i2v_pipeline.transformer_2.load_lora_adapter(state)  # apply to the low-noise expert
-        
-        # Keep the default Wan scheduler (no LCM override for Lightning LoRAs)
-        logger.info("Using default Wan scheduler for Lightning LoRAs...")
-        
-        self.current_model = "i2v"
-        
-        logger.info(f"I2V model with Lightning LoRAs loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+        lora_status = "with Lightning LoRAs" if use_lightning_loras else "without LoRAs"
+        logger.info(f"I2V model {lora_status} loaded. GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
     
     def _load_i2v_first_last_model(self):
         """Load I2V model for first-last frame with fused Lightning LoRAs"""
@@ -404,7 +419,8 @@ class WANModel:
         output_path: str,
         num_frames: int = 81,
         fps: int = 16,
-        resolution: str = "480p"
+        resolution: str = "480p",
+        use_lightning_loras: bool = True
     ) -> str:
         """
         Generate a video from an image and prompt using WAN 2.2 I2V
@@ -416,14 +432,17 @@ class WANModel:
             num_frames: Number of frames to generate (calculated from duration_seconds * fps in the API layer)
             fps: Frames per second (fixed at 16 fps for consistent quality)
             resolution: Target resolution - "480p" (default) or "720p"
+            use_lightning_loras: Whether to use Lightning LoRAs (default True). 
+                                 If False, uses 36 steps and CFG 1.1 instead.
             
         Returns:
             Path to the generated video file
         """
-        # Load I2V model on-demand
-        self._load_i2v_model()
-            
-        logger.info(f"Generating video from image: {image_path} with prompt: '{prompt}' using WAN 2.2 I2V at {resolution}")
+        # Load I2V model on-demand with or without LoRAs
+        self._load_i2v_model(use_lightning_loras=use_lightning_loras)
+        
+        lora_status = "with Lightning LoRAs" if use_lightning_loras else "without LoRAs"
+        logger.info(f"Generating video from image: {image_path} with prompt: '{prompt}' using WAN 2.2 I2V {lora_status} at {resolution}")
         
         # Load and process the input image
         image = load_image(image_path)
@@ -447,6 +466,16 @@ class WANModel:
         
         generator = torch.Generator(device=self.device).manual_seed(random.randint(0, 2**32 - 1))
         
+        # Set parameters based on whether Lightning LoRAs are used
+        if use_lightning_loras:
+            guidance_scale = 1.0  # Lightning LoRA works with CFG=1.0
+            num_inference_steps = 5  # Lightning LoRA optimized for 4-6 steps, using 5
+        else:
+            guidance_scale = 1.1  # Standard CFG for base model
+            num_inference_steps = 36  # Standard steps for base model
+        
+        logger.info(f"Using inference steps: {num_inference_steps}, guidance scale: {guidance_scale}")
+        
         with torch.no_grad():
             output = self.i2v_pipeline(
                 image=image,
@@ -455,8 +484,8 @@ class WANModel:
                 height=height,
                 width=width,
                 num_frames=num_frames,
-                guidance_scale=1.0,  # Lightning LoRA works with CFG=1.0
-                num_inference_steps=5,  # Lightning LoRA optimized for 4-6 steps, using 5
+                guidance_scale=guidance_scale,
+                num_inference_steps=num_inference_steps,
                 generator=generator,
             ).frames[0]
             
