@@ -8,8 +8,6 @@ import torch
 import logging
 import gc
 import os
-import subprocess
-import tempfile
 import random
 from typing import Optional
 from pathlib import Path
@@ -29,62 +27,6 @@ MAX_DIMENSION = 832
 MIN_DIMENSION = 480
 DIMENSION_MULTIPLE = 16
 SQUARE_SIZE = 480
-
-def export_to_video_with_interpolation(video_frames, output_path: str, source_fps: int = 16, target_fps: int = 32):
-    """
-    Export video frames to MP4 with frame interpolation using ffmpeg's minterpolate filter
-    
-    Args:
-        video_frames: List of PIL Images or numpy arrays representing video frames
-        output_path: Path to save the final interpolated video
-        source_fps: Original framerate of the generated frames
-        target_fps: Target framerate after interpolation
-    """
-    # Create temporary file for the source video
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
-        temp_video_path = temp_file.name
-    
-    try:
-        # First, export frames to a temporary video at source fps
-        export_to_video(video_frames, temp_video_path, fps=source_fps)
-        logger.info(f"Exported source video at {source_fps} fps to temporary file: {temp_video_path}")
-        
-        # Use ffmpeg with minterpolate filter to increase framerate
-        cmd = [
-            'ffmpeg',
-            '-i', temp_video_path,
-            '-vf', f'minterpolate=fps={target_fps}:mi_mode=mci:mc_mode=aobmc:vsbmc=1',
-            '-y',  # Overwrite output file if it exists
-            output_path
-        ]
-        
-        logger.info(f"Running ffmpeg with minterpolate filter to achieve {target_fps} fps")
-        logger.debug(f"FFmpeg command: {' '.join(cmd)}")
-        
-        # Run ffmpeg
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        logger.info(f"Successfully interpolated video to {target_fps} fps and saved to: {output_path}")
-        
-    except subprocess.CalledProcessError as e:
-        logger.error(f"FFmpeg failed with error: {e.stderr}")
-        # Fallback: copy the source video without interpolation
-        logger.warning(f"Falling back to original {source_fps} fps video")
-        subprocess.run(['cp', temp_video_path, output_path], check=True)
-        
-    except Exception as e:
-        logger.error(f"Video interpolation failed: {str(e)}")
-        # Fallback: copy the source video without interpolation
-        logger.warning(f"Falling back to original {source_fps} fps video")
-        if Path(temp_video_path).exists():
-            subprocess.run(['cp', temp_video_path, output_path], check=True)
-        else:
-            raise RuntimeError(f"Video generation failed: {str(e)}")
-            
-    finally:
-        # Clean up temporary file
-        if Path(temp_video_path).exists():
-            os.unlink(temp_video_path)
-            logger.debug(f"Cleaned up temporary file: {temp_video_path}")
 
 class WANModel:
     """Wrapper for WAN 2.2 Text-to-Video and Image-to-Video models with memory-efficient loading"""
@@ -395,8 +337,8 @@ class WANModel:
                 num_inference_steps=20,
             ).frames[0]
             
-            # Export to video with frame interpolation to 32 fps
-            export_to_video_with_interpolation(output, output_path, source_fps=fps, target_fps=32)
+            # Export to video
+            export_to_video(output, output_path, fps=fps)
         
         logger.info(f"Video generated and saved to: {output_path}")
         return output_path
@@ -518,8 +460,8 @@ class WANModel:
                 generator=generator,
             ).frames[0]
             
-            # Export to video with frame interpolation to 32 fps
-            export_to_video_with_interpolation(output, output_path, source_fps=fps, target_fps=32)
+            # Export to video
+            export_to_video(output, output_path, fps=fps)
         
         logger.info(f"Video generated and saved to: {output_path}")
         return output_path
@@ -611,8 +553,8 @@ class WANModel:
                 output_type="pil",
             ).frames[0]
             
-            # Export to video with frame interpolation to 32 fps
-            export_to_video_with_interpolation(output, output_path, source_fps=int(fixed_fps), target_fps=32)
+            # Export to video
+            export_to_video(output, output_path, fps=int(fixed_fps))
         
         logger.info(f"First-last frame video generated and saved to: {output_path}")
         return output_path

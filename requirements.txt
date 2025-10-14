@@ -26,9 +26,7 @@ Pillow==10.1.0
 opencv-python==4.11.0.86
 
 
-# Video processing (recommended for better video export)
-imageio
-imageio-ffmpeg
+# Video processing is handled by diffusers export_to_video
 
 # General utilities
 tqdm==4.67.1
