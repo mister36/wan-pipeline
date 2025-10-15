@@ -36,3 +36,7 @@ ftfy
 
 # WAN 2.2 T2V and I2V models - requires diffusers main branch
 git+https://github.com/huggingface/diffusers
+
+# Video processing (recommended for better video export)
+imageio
+imageio-ffmpeg
