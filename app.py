@@ -10,6 +10,7 @@ from datetime import datetime
 import torch
 import requests
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import logging
 
@@ -24,6 +25,15 @@ app = FastAPI(
     title="WAN Media Pipeline API",
     description="API for generating images and videos using WAN 2.2 T2V with Instagirl lora, I2V with Lightning LoRAs, and I2V first-last frame",
     version="2.2.0"
+)
+
+# Add CORS middleware to allow requests from all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 # Create necessary directories
